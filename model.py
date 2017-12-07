@@ -90,11 +90,13 @@ class PB_FCN(nn.Module):
 
         self.noScale = noScale
 
-        self.DownSampler = DownSampler(planes, noScale)
+        muliplier = 2 if noScale else 1
+
+        self.FCN = DownSampler(planes, noScale)
 
         self.up1 = upSampleTransposeConv(planes*2,planes)
-        self.up2 = upSampleTransposeConv(planes,planes/2)
-        self.up3 = upSampleTransposeConv(planes/2,planes/4)
+        self.up2 = upSampleTransposeConv(planes,planes/2*muliplier)
+        self.up3 = upSampleTransposeConv(planes/2*muliplier,planes/4*muliplier)
         self.up4 = upSampleTransposeConv(planes/2,planes/4) if noScale else None
 
         outPlanes = planes/4 if noScale else planes/4
@@ -103,7 +105,7 @@ class PB_FCN(nn.Module):
 
     def forward(self,x):
 
-        f4, f3, f2, f1, f0 = self.DownSampler(x)
+        f4, f3, f2, f1, f0 = self.FCN(x)
         if self.noScale:
             x = self.up1(f4) + f3
             x = self.up2(x) + f2
@@ -126,7 +128,7 @@ class DownSampler(nn.Module):
         self.conv0 = ConvPoolSimple(3,outPlanes,3,1,2,2,False)
         self.conv1 = ConvPoolSimple(outPlanes,planes/2,3,2,1,1,False)
         self.conv2 = ConvPool(planes/2,planes)
-        self.conv_ext = ConvPool(planes/2,planes/2) if noScale else None
+        self.conv_ext = ConvPool(planes,planes) if noScale else None
         self.conv3 = ConvPool(planes,planes*2)
         self.conv4 = ConvPoolSimple(planes*2,planes*4,3,1,2,2,False)
         self.conv5 = ConvPoolSimple(planes*4,planes*4,3,1,2,2,False)
