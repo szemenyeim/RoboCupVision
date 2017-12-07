@@ -76,9 +76,6 @@ def cb():
     stateDict = torch.load("./pth/bestModel" + VGAStr + ".pth",
                            map_location=mapLoc)
     modelConv.load_state_dict(stateDict)
-    stateDict = torch.load("./pth/bestClass" + VGAStr + ".pth",
-                           map_location=mapLoc)
-    modelClass.load_state_dict(stateDict)
 
 optimizer = torch.optim.SGD( [
                                 { 'params': modelConv.parameters()},

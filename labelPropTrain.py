@@ -3,7 +3,7 @@ from torch.autograd import Variable
 from torch.utils import data
 import torch.nn.functional as F
 import lr_scheduler
-from model import  CrossEntropyLoss2d, LabelProp, loadModel, Segmenter, pruneModel
+from model import  CrossEntropyLoss2d, LabelProp, loadModel, PB_FCN, pruneModel
 from duc import SegFull
 from dataset import LPDataSet
 from transform import Scale, ToLabel, HorizontalFlip, VerticalFlip, ToYUV, RandomNoise, RandomBrightness, RandomColor, RandomContrast, RandomHue, labelToPred
@@ -90,7 +90,7 @@ numClass = 5
 numPlanes = 32
 kernelSize = 5
 model = LabelProp(numClass, numPlanes)
-modelSeg = Segmenter(numPlanes, numClass, kernelSize, False)
+modelSeg = PB_FCN(numPlanes, numClass, kernelSize, False)
 
 weights = torch.FloatTensor([1,6,1,3,2])
 if fineTune:

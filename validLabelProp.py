@@ -1,7 +1,7 @@
 import torch
 from torch.autograd import Variable
 from torch.utils import data
-from model import Segmenter, LabelProp
+from model import PB_FCN, LabelProp
 from dataset import LPDataSet
 from transform import Scale, ToLabel, Colorize, ToYUV, labelToPred, optFlow, updateLabels
 from torchvision.transforms import Compose, Normalize, ToTensor
@@ -61,7 +61,7 @@ numClass = 5
 kernelSize = 5
 numPlanes = 32
 
-modelSeg = Segmenter(numPlanes, numClass, kernelSize, False)
+modelSeg = PB_FCN(numPlanes, numClass, kernelSize, False)
 model = LabelProp(numClass,numPlanes)
 mapLoc = {'cuda:0': 'cpu'}
 if torch.cuda.is_available():
