@@ -53,7 +53,8 @@ valloader = data.DataLoader(datasets.ImageFolder("./data/Classification/val", tr
 
 numClass = 5
 numFeat = 32
-modelConv = DownSampler(numFeat, noScale)
+dropout = 0.1
+modelConv = DownSampler(numFeat, noScale, dropout)
 poolFact = 2 if noScale else 4
 modelClass = Classifier(numFeat*2,numClass,poolFact)
 weights = torch.ones(numClass)
@@ -68,8 +69,8 @@ mapLoc = None if torch.cuda.is_available() else {'cuda:0': 'cpu'}
 
 epochs = 200
 lr = 1e-2
-weight_decay = 1e-3
-momentum = 0.5
+weight_decay = 1e-5
+momentum = 0.9
 
 def cb():
     print "Best Model reloaded"

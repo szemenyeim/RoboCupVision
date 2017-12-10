@@ -69,7 +69,7 @@ numPlanes = 32
 if deep:
     model = SegFull(numClass)
 else:
-    model = PB_FCN(numPlanes, numClass, kernelSize, noScale)
+    model = PB_FCN(numPlanes, numClass, kernelSize, noScale, 0)
 mapLoc = {'cuda:0': 'cpu'}
 if torch.cuda.is_available():
     model = model.cuda()

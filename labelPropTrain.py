@@ -89,8 +89,8 @@ valloader = data.DataLoader(LPDataSet(root, split="val", img_transform=input_tra
 numClass = 5
 numPlanes = 32
 kernelSize = 5
-model = LabelProp(numClass, numPlanes)
-modelSeg = PB_FCN(numPlanes, numClass, kernelSize, False)
+model = LabelProp(numClass, numPlanes, 0)
+modelSeg = PB_FCN(numPlanes, numClass, kernelSize, False, 0)
 
 weights = torch.FloatTensor([1,6,1,3,2])
 if fineTune:
@@ -117,7 +117,7 @@ criterion = CrossEntropyLoss2d(weights)
 
 epochs = 200
 lr = 2e-1
-weight_decay = 1e-5
+weight_decay = 1e-3
 momentum = 0.5
 patience = 20
 

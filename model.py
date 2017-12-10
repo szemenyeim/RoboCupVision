@@ -29,21 +29,23 @@ class DUC(nn.Module):
         return x
 
 class upSampleTransposeConv(nn.Module):
-    def __init__(self, inplanes, planes, upscale_factor=2):
+    def __init__(self, inplanes, planes, dropout, upscale_factor=2):
         super(upSampleTransposeConv, self).__init__()
         self.relu = nn.ReLU()
         self.conv = nn.ConvTranspose2d(inplanes, planes, kernel_size=3,
                               padding=1, stride=2, output_padding=1, bias=True)
         self.bn = nn.BatchNorm2d(planes)
+        self.do = nn.Dropout2d(dropout)
 
     def forward(self, x):
         x = self.conv(x)
         x = self.bn(x)
         x = self.relu(x)
+        self.do(x)
         return x
 
 class ConvPool(nn.Module):
-    def __init__(self, inplanes, planes):
+    def __init__(self, inplanes, planes, dropout):
         super(ConvPool, self).__init__()
         self.relu = nn.ReLU()
         self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=3, dilation=2,
@@ -51,25 +53,30 @@ class ConvPool(nn.Module):
         self.pool = nn.Conv2d(planes, planes, kernel_size=3,
                               padding=1, stride=2, bias=False)
         self.bn = nn.BatchNorm2d(planes)
+        self.do = nn.Dropout2d(dropout)
 
     def forward(self, x):
         x = self.conv1(x)
-        x=self.relu(x)
+        x = self.relu(x)
         x = self.pool(x)
         x = self.bn(x)
-        x=self.relu(x)
+        x = self.relu(x)
+        x = self.do(x)
         return x
 
 class ConvPoolSimple(nn.Module):
-    def __init__(self,inplanes,planes,size,stride,padding,dilation,bias):
+    def __init__(self,inplanes,planes,size,stride,padding,dilation,bias, dropout):
         super(ConvPoolSimple,self).__init__()
 
         self.conv = nn.Conv2d(inplanes,planes,size,stride=stride,padding=padding,dilation=dilation,bias=bias)
         self.bn = nn.BatchNorm2d(planes)
         self.relu = nn.ReLU()
+        self.do = nn.Dropout2d(dropout)
 
     def forward(self,x):
-        return self.relu(self.bn(self.conv(x)))
+        x = self.relu(self.bn(self.conv(x)))
+        x = self.do(x)
+        return x
 
 class Classifier(nn.Module):
     def __init__(self,inplanes,num_classes,poolSize=0,kernelSize=1):
@@ -85,21 +92,21 @@ class Classifier(nn.Module):
         return self.classifier(x)
 
 class PB_FCN(nn.Module):
-    def __init__(self,planes, num_classes,kernelSize, noScale):
+    def __init__(self,planes, num_classes,kernelSize, noScale,dropout):
         super(PB_FCN, self).__init__()
 
         self.noScale = noScale
 
         muliplier = 2 if noScale else 1
+        outPlanes = planes/4
 
-        self.FCN = DownSampler(planes, noScale)
+        self.FCN = DownSampler(planes, noScale,dropout)
 
-        self.up1 = upSampleTransposeConv(planes*2,planes)
-        self.up2 = upSampleTransposeConv(planes,planes/2*muliplier)
-        self.up3 = upSampleTransposeConv(planes/2*muliplier,planes/4*muliplier)
-        self.up4 = upSampleTransposeConv(planes/2,planes/4) if noScale else None
+        self.up1 = upSampleTransposeConv(planes*2,planes,dropout)
+        self.up2 = upSampleTransposeConv(planes,planes/2*muliplier,dropout)
+        self.up3 = upSampleTransposeConv(planes/2*muliplier,outPlanes*muliplier,dropout)
+        self.up4 = upSampleTransposeConv(planes/2,outPlanes,dropout) if noScale else None
 
-        outPlanes = planes/4 if noScale else planes/4
 
         self.classifier = Classifier(outPlanes,num_classes,kernelSize=kernelSize)
 
@@ -120,21 +127,21 @@ class PB_FCN(nn.Module):
 
 
 class DownSampler(nn.Module):
-    def __init__(self,planes, noScale):
+    def __init__(self,planes, noScale, dropout):
         super(DownSampler, self).__init__()
         self.noScale = noScale
         outPlanes = planes/4
 
-        self.conv0 = ConvPoolSimple(3,outPlanes,3,1,2,2,False)
-        self.conv1 = ConvPoolSimple(outPlanes,planes/2,3,2,1,1,False)
-        self.conv2 = ConvPool(planes/2,planes)
-        self.conv_ext = ConvPool(planes,planes) if noScale else None
-        self.conv3 = ConvPool(planes,planes*2)
-        self.conv4 = ConvPoolSimple(planes*2,planes*4,3,1,2,2,False)
-        self.conv5 = ConvPoolSimple(planes*4,planes*4,3,1,2,2,False)
-        self.conv6 = ConvPoolSimple(planes*4,planes*4,3,1,2,2,False)
-        self.conv7 = ConvPoolSimple(planes*4,planes*4,3,1,2,2,False)
-        self.conv8 = ConvPoolSimple(planes*4,planes*2,3,1,2,2,False)
+        self.conv0 = ConvPoolSimple(3,outPlanes,3,1,2,2,False,dropout)
+        self.conv1 = ConvPoolSimple(outPlanes,planes/2,3,2,1,1,False,dropout)
+        self.conv2 = ConvPool(planes/2,planes,dropout)
+        self.conv_ext = ConvPool(planes,planes,dropout) if noScale else None
+        self.conv3 = ConvPool(planes,planes*2,dropout)
+        self.conv4 = ConvPoolSimple(planes*2,planes*4,3,1,2,2,False,dropout*2)
+        self.conv5 = ConvPoolSimple(planes*4,planes*4,3,1,2,2,False,dropout*2)
+        self.conv6 = ConvPoolSimple(planes*4,planes*4,3,1,2,2,False,dropout*2)
+        self.conv7 = ConvPoolSimple(planes*4,planes*4,3,1,2,2,False,dropout*2)
+        self.conv8 = ConvPoolSimple(planes*4,planes*2,3,1,2,2,False,dropout*2)
 
     def forward(self,x):
 
@@ -147,21 +154,21 @@ class DownSampler(nn.Module):
         return x4, x3, x2, x1, x0
 
 class LabelProp(nn.Module):
-    def __init__(self,numClass, numPlanes):
+    def __init__(self,numClass, numPlanes,dropout):
         super(LabelProp,self).__init__()
 
-        self.pre = ConvPoolSimple(8,numPlanes/4,3,1,1,1,False)
-        self.down1 = ConvPoolSimple(numPlanes/4,numPlanes/2,3,2,1,1,False)
-        self.down2 = ConvPoolSimple(numPlanes/2,numPlanes/2,3,2,1,1,False)
-        self.down3 = ConvPoolSimple(numPlanes/2,numPlanes,3,2,1,1,False)
+        self.pre = ConvPoolSimple(8,numPlanes/4,3,1,1,1,False, dropout)
+        self.down1 = ConvPoolSimple(numPlanes/4,numPlanes/2,3,2,1,1,False,dropout)
+        self.down2 = ConvPoolSimple(numPlanes/2,numPlanes/2,3,2,1,1,False,dropout)
+        self.down3 = ConvPoolSimple(numPlanes/2,numPlanes,3,2,1,1,False,dropout)
 
-        self.conv1 = ConvPoolSimple(numPlanes,numPlanes*2,3,1,2,2,False)
-        self.conv2 = ConvPoolSimple(numPlanes*2,numPlanes*2,3,1,2,2,False)
-        self.conv3 = ConvPoolSimple(numPlanes*2,numPlanes,3,1,2,2,False)
+        self.conv1 = ConvPoolSimple(numPlanes,numPlanes*2,3,1,2,2,False,dropout)
+        self.conv2 = ConvPoolSimple(numPlanes*2,numPlanes*2,3,1,2,2,False,dropout)
+        self.conv3 = ConvPoolSimple(numPlanes*2,numPlanes,3,1,2,2,False,dropout)
 
-        self.upConv1 = upSampleTransposeConv(numPlanes,numPlanes/2)
-        self.upConv2 = upSampleTransposeConv(numPlanes/2,numPlanes/2)
-        self.upConv3 = upSampleTransposeConv(numPlanes/2,numPlanes/2)
+        self.upConv1 = upSampleTransposeConv(numPlanes,numPlanes/2,dropout)
+        self.upConv2 = upSampleTransposeConv(numPlanes/2,numPlanes/2,dropout)
+        self.upConv3 = upSampleTransposeConv(numPlanes/2,numPlanes/2,dropout)
         self.classifier = nn.Conv2d(numPlanes/2,numClass,1,padding=0)
 
     def forward(self,x):
@@ -176,6 +183,59 @@ class LabelProp(nn.Module):
         x[:,0:8,:,:] = x[:,0:8,:,:] + top
         x = self.classifier(x)
         return x
+
+class BNNL(nn.Module):
+    def __init__(self):
+        super(BNNL,self).__init__()
+        self.conv1 = nn.Conv2d(3,8,8,padding=4)
+        self.conv2 = nn.Conv2d(8,16,8,padding=3)
+        self.conv3 = nn.Conv2d(16,16,8,padding=3)
+        self.fc = nn.Conv2d(16,512,1)
+        self.classifier = nn.Conv2d(512,4,1)
+
+        self.relu = nn.ReLU()
+
+        self.pool1 = nn.MaxPool2d(4,2)
+        self.pool2 = nn.MaxPool2d(4,2)
+        self.pool3 = nn.MaxPool2d(4,2)
+
+        self.do1 = nn.Dropout2d(0.25)
+        self.do2 = nn.Dropout2d(0.25)
+        self.do3 = nn.Dropout2d(0.25)
+        self.dof = nn.Dropout(0.5)
+
+    def forward(self,x):
+        x = self.relu(self.pool1(self.do1(self.conv1(x))))
+        x = self.relu(self.pool2(self.do2(self.conv2(x))))
+        x = self.relu(self.pool3(self.do3(self.conv3(x))))
+        x = self.classifier(self.relu(self.dof(self.fc(x))))
+        return x
+
+class BNNMC(nn.Module):
+    def __init__(self):
+        super(BNNMC,self).__init__()
+        self.conv1 = nn.Conv2d(3,8,5,padding=1)
+        self.conv2 = nn.Conv2d(8,16,3,padding=1)
+        self.conv3 = nn.Conv2d(16,16,3,padding=1)
+        self.classifier = nn.Conv2d(16,4,3)
+
+        self.relu = nn.ReLU()
+
+        self.pool1 = nn.MaxPool2d(4,2)
+        self.pool2 = nn.MaxPool2d(4,2)
+        self.pool3 = nn.MaxPool2d(2,2)
+
+        self.do1 = nn.Dropout2d(0.25)
+        self.do2 = nn.Dropout2d(0.25)
+        self.do3 = nn.Dropout2d(0.25)
+
+    def forward(self,x):
+        x = self.relu(self.pool1(self.do1(self.conv1(x))))
+        x = self.relu(self.pool2(self.do2(self.conv2(x))))
+        x = self.relu(self.pool3(self.do3(self.conv3(x))))
+        x = self.classifier(x)
+        return x
+
 
 def loadModel(model,noScale,deep,fineTune,prune,mapLoc):
     path = "./pth/bestModel" + ("Seg" if fineTune else "") + ("VGA" if noScale else "") + ("Deep" if deep else "") + ("Finetuned" if prune else "") + ".pth"

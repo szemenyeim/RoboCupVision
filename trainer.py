@@ -98,7 +98,7 @@ kernelSize = 1
 if deep:
     model = SegFull(numClass)
 else:
-    model = PB_FCN(numPlanes, numClass, kernelSize, noScale)
+    model = PB_FCN(numPlanes, numClass, kernelSize, noScale, 0)
 
 weights = torch.FloatTensor([1,6,1.5,3,3])
 if fineTune:

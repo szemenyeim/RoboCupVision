@@ -61,8 +61,8 @@ numClass = 5
 kernelSize = 5
 numPlanes = 32
 
-modelSeg = PB_FCN(numPlanes, numClass, kernelSize, False)
-model = LabelProp(numClass,numPlanes)
+modelSeg = PB_FCN(numPlanes, numClass, kernelSize, False, 0)
+model = LabelProp(numClass,numPlanes, 0)
 mapLoc = {'cuda:0': 'cpu'}
 if torch.cuda.is_available():
     modelSeg = modelSeg.cuda()

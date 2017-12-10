@@ -1,7 +1,7 @@
 import torch
 from torch.autograd import Variable
 from torch.utils import data
-from model import DownSampler, Classifier
+from model import DownSampler, Classifier, BNNL, BNNMC
 import lr_scheduler
 from visualize import LinePlotter
 from torchvision.transforms import Compose, Normalize, ToTensor, RandomHorizontalFlip
@@ -12,11 +12,13 @@ import numpy as np
 import argparse
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--noScale", help="Use VGA resolution",
+parser.add_argument("--hessL", help="Use BNN-L from Hess et. al.",
+                    action="store_true")
+parser.add_argument("--hessMC", help="Use BNN-M-C from Hess et. al.",
                     action="store_true")
 args = parser.parse_args()
-noScale = args.noScale
-VGAStr = "VGA" if noScale else ""
+hessL = args.hessL
+hessMC = args.hessMC
 
 input_transform = Compose([
     ToYUV(),
@@ -43,9 +45,9 @@ torch.manual_seed(seed)
 if torch.cuda.is_available():
     torch.cuda.manual_seed(seed)
 
-batchSize = 32
+batchSize = 64
 
-trainDataRoot = "./data/Classification/train/"
+trainDataRoot = "./data/Classification/trainBig/"
 
 trainloader = data.DataLoader(datasets.ImageFolder(trainDataRoot, transform=input_transform_tr),
                               batch_size=batchSize, shuffle=True)
@@ -55,39 +57,53 @@ valloader = data.DataLoader(datasets.ImageFolder("./data/Classification/test", t
 
 numClass = 4
 numFeat = 32
-modelConv = DownSampler(numFeat, noScale)
-poolFact = 2 if noScale else 4
-modelClass = Classifier(numFeat*2,numClass,poolFact)
+dropout = 0.25
+modelConv = DownSampler(numFeat, False, dropout)
+modelClass = Classifier(numFeat*2,numClass,4)
+modelHess = BNNL()
+if hessMC:
+    modelHess = BNNMC()
 weights = torch.ones(numClass)
 if torch.cuda.is_available():
     modelConv = modelConv.cuda()
     modelClass = modelClass.cuda()
+    modelHess = modelHess.cuda()
     weights = weights.cuda()
 
 criterion = torch.nn.CrossEntropyLoss(weights)
 
 mapLoc = None if torch.cuda.is_available() else {'cuda:0': 'cpu'}
 
-epochs = 200
+epochs = 80
 lr = 1e-2
-weight_decay = 1e-5
-momentum = 0.5
+weight_decay = 5e-4
+momentum = 0.9
 
 
 def cb():
     print "Best Model reloaded"
-    stateDict = torch.load("./pth/bestModel" + VGAStr + ".pth",
-                           map_location=mapLoc)
-    modelConv.load_state_dict(stateDict)
-    stateDict = torch.load("./pth/bestClass" + VGAStr + ".pth",
-                           map_location=mapLoc)
-    modelClass.load_state_dict(stateDict)
+    if hessMC:
+        stateDict = torch.load("./pth/bestModelHessMC" + ".pth",
+                               map_location=mapLoc)
+        modelHess.load_state_dict(stateDict)
+    elif hessL:
+        stateDict = torch.load("./pth/bestModelHessL" + ".pth",
+                               map_location=mapLoc)
+        modelHess.load_state_dict(stateDict)
+    else:
+        stateDict = torch.load("./pth/bestModelB" + ".pth",
+                               map_location=mapLoc)
+        modelConv.load_state_dict(stateDict)
+        stateDict = torch.load("./pth/bestClassB" + ".pth",
+                               map_location=mapLoc)
+        modelClass.load_state_dict(stateDict)
 
 optimizer = torch.optim.SGD( [
                                 { 'params': modelConv.parameters()},
-                                { 'params': modelClass.parameters()}, ],
+                                { 'params': modelClass.parameters()},
+                                { 'params': modelHess.parameters()}, ],
                              lr=lr, momentum=momentum, weight_decay=weight_decay )
-scheduler = lr_scheduler.ReduceLROnPlateau(optimizer,'min',factor=0.5,patience=20,verbose=True,threshold=1e-3,cb=cb)
+scheduler = lr_scheduler.ReduceLROnPlateau(optimizer,'min',factor=0.2,patience=10,verbose=True,threshold=1e-3,cb=cb)
 
 ploter = LinePlotter()
 
@@ -99,6 +115,7 @@ for epoch in range(epochs):
 
     modelConv.train()
     modelClass.train()
+    modelHess.train()
     running_loss = 0.0
     running_acc = 0.0
     imgCnt = 0
@@ -114,8 +131,11 @@ for epoch in range(epochs):
 
         optimizer.zero_grad()
 
-        final = modelConv(images)[0] if noScale else modelConv(images)[1]
-        pred = torch.squeeze(modelClass(final))
+        if hessL or hessMC:
+            pred = torch.squeeze(modelHess(images))
+        else:
+            final = modelConv(images)[1]
+            pred = torch.squeeze(modelClass(final))
         loss = criterion(pred,labels)
 
         loss.backward()
@@ -143,6 +163,7 @@ for epoch in range(epochs):
     conf = torch.zeros(numClass,numClass)
     modelConv.eval()
     modelClass.eval()
+    modelHess.eval()
     bar = progressbar.ProgressBar(0, len(valloader), redirect_stdout=False)
     for i, (images, labels) in enumerate(valloader):
         if torch.cuda.is_available():
@@ -154,8 +175,11 @@ for epoch in range(epochs):
 
         optimizer.zero_grad()
 
-        final = modelConv(images)[0] if noScale else modelConv(images)[1]
-        pred = torch.squeeze(modelClass(final))
+        if hessL or hessMC:
+            pred = torch.squeeze(modelHess(images))
+        else:
+            final = modelConv(images)[1]
+            pred = torch.squeeze(modelClass(final))
         loss = criterion(pred, labels)
 
         bSize = images.data.size()[0]
@@ -178,8 +202,13 @@ for epoch in range(epochs):
         bestLoss = running_loss/(i+1)
         bestAcc = running_acc/(imgCnt)
         print conf
-        torch.save(modelConv.state_dict(), "./pth/bestModel" + VGAStr + ".pth")
-        torch.save(modelClass.state_dict(), "./pth/bestClass" + VGAStr + ".pth")
+        if hessL:
+            torch.save(modelConv.state_dict(), "./pth/bestModelHessL" + ".pth")
+        elif hessMC:
+            torch.save(modelConv.state_dict(), "./pth/bestModelHessMC" + ".pth")
+        else:
+            torch.save(modelConv.state_dict(), "./pth/bestModelB" + ".pth")
+            torch.save(modelClass.state_dict(), "./pth/bestClassB" + ".pth")
 
     scheduler.step(running_loss/(i+1))
 
