@@ -1,7 +1,7 @@
 import torch
 from torch.autograd import Variable
 from torch.utils import data
-from model import PB_FCN
+from model import PB_FCN, FCN
 from duc import SegFull
 from dataset import SSDataSet
 from transform import Scale, ToLabel, Colorize, ToYUV
@@ -21,17 +21,22 @@ parser.add_argument("--deep", help="Use Very deep model for reference",
                     action="store_true")
 parser.add_argument("--noScale", help="Use VGA resolution",
                     action="store_true")
+parser.add_argument("--FCN", help="Use Normal FCN Network",
+                    action="store_true")
 args = parser.parse_args()
 
 fineTune = args.finetuned
 pruned = args.pruned
 deep = args.deep
 noScale = args.noScale
+useFCN = args.FCN
+if useFCN: noScale = False
 
 
 fineTuneStr = "Finetuned" if fineTune else ""
 pruneStr = "Pruned" if pruned else ""
 deepStr = "Deep" if deep else ""
+FCNStr = "1" if useFCN else ""
 scaleStr = "VGA" if noScale else ""
 scale = 1 if noScale else 4
 
@@ -68,6 +73,8 @@ kernelSize = 1
 numPlanes = 32
 if deep:
     model = SegFull(numClass)
+elif useFCN:
+    model = FCN()
 else:
     model = PB_FCN(numPlanes, numClass, kernelSize, noScale, 0)
 mapLoc = {'cuda:0': 'cpu'}
@@ -75,7 +82,7 @@ if torch.cuda.is_available():
     model = model.cuda()
     mapLoc = None
 
-stateDict = torch.load("./pth/bestModelSeg" + scaleStr + deepStr + fineTuneStr + pruneStr + ".pth", map_location=mapLoc)
+stateDict = torch.load("./pth/bestModelSeg" + FCNStr + scaleStr + deepStr + fineTuneStr + pruneStr + ".pth", map_location=mapLoc)
 model.load_state_dict(stateDict)
 
 saveParams("./weights" + ("VGA" if noScale else ""), model.cpu())

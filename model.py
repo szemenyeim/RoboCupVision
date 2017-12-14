@@ -64,6 +64,30 @@ class ConvPool(nn.Module):
         x = self.do(x)
         return x
 
+class ConvPoolDouble(nn.Module):
+    def __init__(self, inplanes, planes, dropout):
+        super(ConvPoolDouble, self).__init__()
+        self.relu = nn.ReLU()
+        self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=3, dilation=2,
+                              padding=2, bias=False)
+        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, dilation=2,
+                              padding=2, bias=False)
+        self.pool = nn.Conv2d(planes, planes, kernel_size=3,
+                              padding=1, stride=2, bias=False)
+        self.bn = nn.BatchNorm2d(planes)
+        self.do = nn.Dropout2d(dropout)
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.relu(x)
+        x = self.conv2(x)
+        x = self.relu(x)
+        x = self.pool(x)
+        x = self.bn(x)
+        x = self.relu(x)
+        x = self.do(x)
+        return x
+
 class ConvPoolSimple(nn.Module):
     def __init__(self,inplanes,planes,size,stride,padding,dilation,bias, dropout):
         super(ConvPoolSimple,self).__init__()
@@ -125,6 +149,27 @@ class PB_FCN(nn.Module):
 
         return self.classifier(x)
 
+class FCN(nn.Module):
+    def __init__(self):
+        super(FCN,self).__init__()
+
+        planes = 32
+
+        self.FCN = DownSamplerThick(32,0)
+
+        self.up1 = upSampleTransposeConv(planes*2,planes,0)
+        self.up2 = upSampleTransposeConv(planes,planes/2,0)
+        self.up3 = upSampleTransposeConv(planes/2,planes/2,0)
+
+        self.classifier = Classifier(planes/2,5,1)
+
+    def forward(self,x):
+        f3, f2, f1, f0 = self.FCN(x)
+        x = self.up1(f3) + f2
+        x = self.up2(x) + f1
+        x = self.up3(x) + f0
+        return self.classifier(x)
+
 
 class DownSampler(nn.Module):
     def __init__(self,planes, noScale, dropout):
@@ -152,6 +197,27 @@ class DownSampler(nn.Module):
         x4 = self.conv8(self.conv7(self.conv6(self.conv5(self.conv4(self.conv3(x3)))))) if self.noScale else None
 
         return x4, x3, x2, x1, x0
+
+class DownSamplerThick(nn.Module):
+    def __init__(self, planes, dropout):
+        super(DownSamplerThick, self).__init__()
+        outPlanes = planes / 2
+
+        self.conv0 = ConvPoolSimple(3, outPlanes, 3, 1, 2, 2, False, dropout)
+        self.conv0_1 = ConvPoolSimple(outPlanes, outPlanes, 3, 1, 2, 2, False, dropout)
+        self.conv1 = ConvPoolSimple(outPlanes, outPlanes, 3, 2, 1, 1, False, dropout)
+        self.conv2 = ConvPoolDouble(outPlanes, planes, dropout)
+        self.conv3 = ConvPoolDouble(planes, planes * 2, dropout)
+        self.conv4 = ConvPoolSimple(planes * 2, planes * 4, 3, 1, 2, 2, False, dropout * 2)
+        self.conv5 = ConvPoolSimple(planes * 4, planes * 2, 3, 1, 2, 2, False, dropout * 2)
+
+    def forward(self, x):
+        x0 = self.conv0_1(self.conv0(x))
+        x1 = self.conv1(x0)
+        x2 = self.conv2(x1)
+        x3 = self.conv5(self.conv4(self.conv3(x2)))
+
+        return x3, x2, x1, x0
 
 class LabelProp(nn.Module):
     def __init__(self,numClass, numPlanes,dropout):

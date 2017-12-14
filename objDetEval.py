@@ -19,6 +19,7 @@ parser.add_argument("--hessMC", help="Use BNN-M-C from Hess et. al.",
 args = parser.parse_args()
 hessL = args.hessL
 hessMC = args.hessMC
+if not hessMC: hessL = True
 
 input_transform = Compose([
     ToYUV(),
@@ -47,26 +48,20 @@ if torch.cuda.is_available():
 
 batchSize = 64
 
-trainDataRoot = "./data/Classification/trainBig/"
+trainDataRoot = "./data/Classification/correctBBsTrain/"
 
 trainloader = data.DataLoader(datasets.ImageFolder(trainDataRoot, transform=input_transform_tr),
                               batch_size=batchSize, shuffle=True)
 
-valloader = data.DataLoader(datasets.ImageFolder("./data/Classification/test", transform=input_transform),
+valloader = data.DataLoader(datasets.ImageFolder("./data/Classification/correctBBs", transform=input_transform),
                               batch_size=batchSize, shuffle=True)
 
 numClass = 4
-numFeat = 32
-dropout = 0.25
-modelConv = DownSampler(numFeat, False, dropout)
-modelClass = Classifier(numFeat*2,numClass,4)
 modelHess = BNNL()
 if hessMC:
     modelHess = BNNMC()
 weights = torch.ones(numClass)
 if torch.cuda.is_available():
-    modelConv = modelConv.cuda()
-    modelClass = modelClass.cuda()
     modelHess = modelHess.cuda()
     weights = weights.cuda()
 
@@ -74,7 +69,7 @@ criterion = torch.nn.CrossEntropyLoss(weights)
 
 mapLoc = None if torch.cuda.is_available() else {'cuda:0': 'cpu'}
 
-epochs = 80
+epochs = 40
 lr = 1e-2
 weight_decay = 5e-4
 momentum = 0.9
@@ -90,17 +85,8 @@ def cb():
         stateDict = torch.load("./pth/bestModelHessL" + ".pth",
                                map_location=mapLoc)
         modelHess.load_state_dict(stateDict)
-    else:
-        stateDict = torch.load("./pth/bestModelB" + ".pth",
-                               map_location=mapLoc)
-        modelConv.load_state_dict(stateDict)
-        stateDict = torch.load("./pth/bestClassB" + ".pth",
-                               map_location=mapLoc)
-        modelClass.load_state_dict(stateDict)
 
 optimizer = torch.optim.SGD( [
-                                { 'params': modelConv.parameters()},
-                                { 'params': modelClass.parameters()},
                                 { 'params': modelHess.parameters()}, ],
                              lr=lr, momentum=momentum, weight_decay=weight_decay )
 scheduler = lr_scheduler.ReduceLROnPlateau(optimizer,'min',factor=0.2,patience=10,verbose=True,threshold=1e-3,cb=cb)
@@ -113,8 +99,6 @@ bestTest = 0
 
 for epoch in range(epochs):
 
-    modelConv.train()
-    modelClass.train()
     modelHess.train()
     running_loss = 0.0
     running_acc = 0.0
@@ -131,11 +115,7 @@ for epoch in range(epochs):
 
         optimizer.zero_grad()
 
-        if hessL or hessMC:
-            pred = torch.squeeze(modelHess(images))
-        else:
-            final = modelConv(images)[1]
-            pred = torch.squeeze(modelClass(final))
+        pred = torch.squeeze(modelHess(images))
         loss = criterion(pred,labels)
 
         loss.backward()
@@ -161,8 +141,6 @@ for epoch in range(epochs):
     running_acc = 0.0
     imgCnt = 0
     conf = torch.zeros(numClass,numClass)
-    modelConv.eval()
-    modelClass.eval()
     modelHess.eval()
     bar = progressbar.ProgressBar(0, len(valloader), redirect_stdout=False)
     for i, (images, labels) in enumerate(valloader):
@@ -173,11 +151,7 @@ for epoch in range(epochs):
             images = Variable(images)
             labels = Variable(labels)
 
-        if hessL or hessMC:
-            pred = torch.squeeze(modelHess(images))
-        else:
-            final = modelConv(images)[1]
-            pred = torch.squeeze(modelClass(final))
+        pred = torch.squeeze(modelHess(images))
         loss = criterion(pred, labels)
 
         bSize = images.data.size()[0]
@@ -199,16 +173,24 @@ for epoch in range(epochs):
     if bestAcc < running_acc/(imgCnt):
         bestLoss = running_loss/(i+1)
         bestAcc = running_acc/(imgCnt)
+        bestConf = conf
+        total = torch.sum(bestConf[:,1:4])
+        totAcc = bestConf[1,1]+bestConf[2,2]+bestConf[3,3]
+        fp = torch.sum(bestConf[1:4,:])-totAcc
         print conf
         if hessL:
             torch.save(modelHess.state_dict(), "./pth/bestModelHessL" + ".pth")
         elif hessMC:
             torch.save(modelHess.state_dict(), "./pth/bestModelHessMC" + ".pth")
-        else:
-            torch.save(modelConv.state_dict(), "./pth/bestModelB" + ".pth")
-            torch.save(modelClass.state_dict(), "./pth/bestClassB" + ".pth")
+        print("Best: Accuracy: %.4f False Neg: %.2f False Pos: %.2f" % (totAcc/total*100, 100-totAcc/total*100, fp/total*100))
 
     scheduler.step(running_loss/(i+1))
 
 print("Finished: Best Validation Loss: %.4f Best Validation Acc: %.2f" % (bestLoss, bestAcc))
+
+total = torch.sum(bestConf[:,1:4])
+totAcc = bestConf[1,1]+bestConf[2,2]+bestConf[3,3]
+fp = torch.sum(bestConf[1:4,:])-totAcc
+
+print("Finished: Accuracy: %.4f False Neg: %.2f False Pos: %.2f" % (totAcc/total*100, 100-totAcc/total*100, fp/total*100))
 
