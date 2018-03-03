@@ -1,3 +1,8 @@
 /melTrain.py
-data/
 *.zip
+data/Classification
+data/val
+data/train
+data/FineTune
+data/FineTuneHorizon
+data/LabelProp
