@@ -1,1 +1,1 @@
-You should unzip the datasets here
+Get the datasets from here: http://3dmr.iit.bme.hu/research/robocup/Datasets/index.html
