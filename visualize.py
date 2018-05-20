@@ -3,7 +3,7 @@ import numpy as np
 
 class LinePlotter(object):
     def __init__(self, env_name="main"):
-        self.vis = visdom.Visdom()
+        self.vis = visdom.Visdom(port=8097)
         self.env = env_name
         self.plots = {}
 
@@ -17,5 +17,5 @@ class LinePlotter(object):
                                         ylabel=var_name
                                         ))
         else:
-            self.vis.updateTrace(X=np.array([x, x]), Y=np.array([y, y]), env=self.env,
-                                win=self.plots[var_name], name=split_name)
+            self.vis.line(X=np.array([x, x]), Y=np.array([y, y]), update='append', env=self.env,
+                                win=self.plots[var_name], name=var_name)
