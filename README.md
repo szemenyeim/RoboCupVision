@@ -58,18 +58,18 @@ There are several further options you can use:
 
 The training of the label propagation network is quite similar to the segmentation networks, except that the classification pretraining step is omitted.
 
-python labelPropTrain.py
+        python labelPropTrain.py
 
-python labelPropTrain.py –finetune
+        python labelPropTrain.py –finetune
 
-python labelPropTrain.py –finetune –prune
+        python labelPropTrain.py –finetune –prune
 
 You can also generate the labeled images using the following script:
 
-python validLabelProp.py –finetuned –pruned
+        python validLabelProp.py –finetuned –pruned
 
 You can also compare the results with farneback optical flow using:
 
-python validLabelProp.py –finetuned –optFlow
+        python validLabelProp.py –finetuned –optFlow
 
 Note, that the &#39;finetuned&#39; flag is needed to set the database to the real one.
