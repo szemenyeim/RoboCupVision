@@ -2,23 +2,8 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="b5a20e37-278d-4052-86a0-669659563bec" name="Default" comment="">
-      <change beforePath="" afterPath="$PROJECT_DIR$/DBConvert.py" />
-      <change beforePath="$PROJECT_DIR$/.idea/RoboCupVision.iml" afterPath="$PROJECT_DIR$/.idea/RoboCupVision.iml" />
-      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" afterPath="$PROJECT_DIR$/.idea/misc.xml" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" afterPath="$PROJECT_DIR$/.idea/workspace.xml" />
-      <change beforePath="$PROJECT_DIR$/classTrainer.py" afterPath="$PROJECT_DIR$/classTrainer.py" />
-      <change beforePath="$PROJECT_DIR$/classVal.py" afterPath="$PROJECT_DIR$/classVal.py" />
-      <change beforePath="$PROJECT_DIR$/labelPropTrain.py" afterPath="$PROJECT_DIR$/labelPropTrain.py" />
-      <change beforePath="$PROJECT_DIR$/model.py" afterPath="$PROJECT_DIR$/model.py" />
-      <change beforePath="$PROJECT_DIR$/objDetEval.py" afterPath="$PROJECT_DIR$/objDetEval.py" />
-      <change beforePath="$PROJECT_DIR$/pth/bestModel.pth" afterPath="$PROJECT_DIR$/pth/bestModel.pth" />
-      <change beforePath="$PROJECT_DIR$/pth/bestModelSeg.pth" afterPath="$PROJECT_DIR$/pth/bestModelSeg.pth" />
-      <change beforePath="$PROJECT_DIR$/pth/bestModelSegFinetuned.pth" afterPath="$PROJECT_DIR$/pth/bestModelSegFinetuned.pth" />
-      <change beforePath="$PROJECT_DIR$/pth/bestModelSegFinetunedPruned.pth" afterPath="$PROJECT_DIR$/pth/bestModelSegFinetunedPruned.pth" />
-      <change beforePath="$PROJECT_DIR$/tester.py" afterPath="$PROJECT_DIR$/tester.py" />
-      <change beforePath="$PROJECT_DIR$/trainer.py" afterPath="$PROJECT_DIR$/trainer.py" />
-      <change beforePath="$PROJECT_DIR$/validLabelProp.py" afterPath="$PROJECT_DIR$/validLabelProp.py" />
-      <change beforePath="$PROJECT_DIR$/visualize.py" afterPath="$PROJECT_DIR$/visualize.py" />
+      <change beforePath="$PROJECT_DIR$/DBConvert.py" afterPath="$PROJECT_DIR$/DBConvert.py" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="TRACKING_ENABLED" value="true" />
@@ -44,10 +29,10 @@
       <file leaf-file-name="DBConvert.py" pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/DBConvert.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="361">
-              <caret line="124" column="27" lean-forward="false" selection-start-line="124" selection-start-column="27" selection-end-line="124" selection-end-column="27" />
+            <state relative-caret-position="514">
+              <caret line="145" column="26" lean-forward="false" selection-start-line="145" selection-start-column="26" selection-end-line="145" selection-end-column="26" />
               <folding>
-                <element signature="e#0#12#0" expanded="true" />
+                <element signature="e#0#21#0" expanded="true" />
               </folding>
             </state>
           </provider>
@@ -177,8 +162,8 @@
     </option>
   </component>
   <component name="ProjectFrameBounds">
-    <option name="x" value="445" />
-    <option name="y" value="64" />
+    <option name="x" value="382" />
+    <option name="y" value="102" />
     <option name="width" value="1378" />
     <option name="height" value="793" />
   </component>
@@ -302,7 +287,7 @@
     <servers />
   </component>
   <component name="ToolWindowManager">
-    <frame x="445" y="64" width="1378" height="793" extended-state="0" />
+    <frame x="382" y="102" width="1378" height="793" extended-state="0" />
     <layout>
       <window_info id="Project" active="false" anchor="left" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.13115846" sideWeight="0.5" order="0" side_tool="false" content_ui="combo" />
       <window_info id="TODO" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="6" side_tool="false" content_ui="tabs" />
@@ -723,10 +708,10 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/DBConvert.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="361">
-          <caret line="124" column="27" lean-forward="false" selection-start-line="124" selection-start-column="27" selection-end-line="124" selection-end-column="27" />
+        <state relative-caret-position="514">
+          <caret line="145" column="26" lean-forward="false" selection-start-line="145" selection-start-column="26" selection-end-line="145" selection-end-column="26" />
           <folding>
-            <element signature="e#0#12#0" expanded="true" />
+            <element signature="e#0#21#0" expanded="true" />
           </folding>
         </state>
       </provider>
