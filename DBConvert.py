@@ -23,7 +23,7 @@ def get_immediate_subdirectories(a_dir):
     return [name for name in os.listdir(a_dir)
             if os.path.isdir(os.path.join(a_dir, name))]
 
-def convert(root, split="train"):
+def convert(root, split="val"):
 
     labels = []
     images = []
@@ -42,7 +42,7 @@ def convert(root, split="train"):
         path = osp.join(lab_dir,file)
         label = cv2.imread(path,0)
 
-        pred = [file]
+        pred = [img]
 
         # Detect balls
         balls = np.array(label == 1, dtype=np.uint8)
@@ -137,11 +137,14 @@ def convert(root, split="train"):
     kmg = KMeans(2).fit(goalRects)
 
     np.save(osp.join(data_dir,'bMean.npy'),bMean)
-    np.save(osp.join(data_dir,'rMean.npy'),kmr)
-    np.save(osp.join(data_dir,'gMean.npy'),kmg)
+    np.save(osp.join(data_dir,'rMean.npy'),kmr.cluster_centers_)
+    np.save(osp.join(data_dir,'gMean.npy'),kmg.cluster_centers_)
 
     with open(osp.join(data_dir,'preds.pickle'), 'wb') as f:
         pickle.dump(preds, f)
 
 if __name__ == '__main__':
     convert(root='./data/')
+    convert(root='./data/',split="val")
+    convert(root='./data/FinetuneHorizon/')
+    convert(root='./data/Finetunehorizon/',split="val")

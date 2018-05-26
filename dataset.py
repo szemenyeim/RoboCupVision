@@ -7,6 +7,9 @@ import numpy as np
 import random
 import re
 import os
+import pickle
+from scipy.optimize import linear_sum_assignment
+from scipy.spatial.distance import cdist
 
 def tryint(s):
     try:
@@ -26,6 +29,93 @@ def default_loader(path):
 def get_immediate_subdirectories(a_dir):
     return [name for name in os.listdir(a_dir)
             if os.path.isdir(os.path.join(a_dir, name))]
+
+
+class ODDataSet(data.Dataset):
+    def __init__(self, root, split="train", img_transform=None, label_transform=None, numBall = 1, numRobot = 5, numGoal = 2):
+
+        self.numBBs = numBall+numGoal+numRobot
+        self.root = root
+        self.split = split
+        self.images = []
+        self.labels = np.empty([0,5*self.numBBs])
+        self.img_transform = img_transform
+        self.label_transform = label_transform
+
+        data_dir = osp.join(root, split)
+        self.img_dir = osp.join(data_dir, "images")
+        self.bMeans = np.load(osp.join(data_dir,'bMean.npy'))
+        self.rMeans = np.load(osp.join(data_dir,'rMean.npy'))
+        self.gMeans = np.load(osp.join(data_dir,'gMean.npy'))
+        labs = pickle.load(open(osp.join(data_dir,'preds.pickle'),'rb'))
+
+        for i, file in enumerate(sorted(glob.glob1(self.img_dir, "*.png"), key=alphanum_key)):
+            self.images.append(file)
+            currLab = labs[i]
+            labArray = self.label2Array(currLab)
+            self.labels = np.append(self.labels,labArray,0)
+
+        self.labels = (self.labels - np.mean(self.labels,0)) / np.std(self.labels,0)
+
+
+    def label2Array(self,label):
+            labArray = np.zeros((1, 5*self.numBBs))
+
+            goals = np.empty((0,5))
+            robots = np.empty((0,5))
+
+            for BB in label:
+                if BB[0] == 1:
+                    labArray[0,0] = 1
+                    labArray[0,1:5] = BB[1]-self.bMeans
+                elif BB[0] == 2:
+                    robots = np.append(robots,BB[1])
+                elif BB[0] == 3:
+                    goals = np.append(goals,BB[1])
+
+            if robots.shape[0] > 0:
+                robots = np.reshape(robots,(-1,4))
+                roboDist = cdist(robots,self.rMeans)
+                row_ind, col_ind = linear_sum_assignment(roboDist)
+                for i,ind in enumerate(row_ind):
+                    arrOffs = (ind+1)*5
+                    labArray[0,arrOffs] = 1
+                    labArray[0,arrOffs+1:arrOffs+5] = robots[i]-self.rMeans[ind]
+            if goals.shape[0] > 0:
+                goals = np.reshape(goals,(-1,4))
+                goalDist = cdist(goals,self.gMeans)
+                row_ind, col_ind = linear_sum_assignment(goalDist)
+                for i,ind in enumerate(row_ind):
+                    arrOffs = (ind+6)*5
+                    labArray[0,arrOffs] = 1
+                    labArray[0,arrOffs+1:arrOffs+5] = goals[i]-self.gMeans[ind]
+
+            return labArray
+
+    def __len__(self):
+        return len(self.images)
+
+    def __getitem__(self, index):
+        img_file = osp.join( self.img_dir, self.images[index])
+
+        img = Image.open(img_file).convert('RGB')
+        label = self.labels[index]
+
+        seed = np.random.randint(2147483647)  # make a seed with numpy generator
+        random.seed(seed)  # apply this seed to img tranfsorms
+        if self.img_transform is not None:
+            imgs = self.img_transform(img)
+        else:
+            imgs = img
+
+        random.seed(seed)  # apply this seed to target tranfsorms
+        if self.label_transform is not None:
+            labels = self.label_transform(label)
+        else:
+            labels = label
+
+        return imgs, labels
+
 
 class LPDataSet(data.Dataset):
     def __init__(self, root, split="train", img_transform=None, label_transform=None):

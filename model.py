@@ -1,7 +1,30 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torchvision.models as models
+
+
+def bb_intersection_over_union(boxA, boxB):
+    # determine the (x, y)-coordinates of the intersection rectangle
+    xA = max(boxA[0], boxB[0])
+    yA = max(boxA[1], boxB[1])
+    xB = min(boxA[2], boxB[2])
+    yB = min(boxA[3], boxB[3])
+
+    # compute the area of intersection rectangle
+    interArea = (xB - xA + 1) * (yB - yA + 1)
+
+    # compute the area of both the prediction and ground-truth
+    # rectangles
+    boxAArea = (boxA[2] - boxA[0] + 1) * (boxA[3] - boxA[1] + 1)
+    boxBArea = (boxB[2] - boxB[0] + 1) * (boxB[3] - boxB[1] + 1)
+
+    # compute the intersection over union by taking the intersection
+    # area and dividing it by the sum of prediction + ground-truth
+    # areas - the interesection area
+    iou = interArea / float(boxAArea + boxBArea - interArea)
+
+    # return the intersection over union value
+    return iou
 
 # Pixelwise Cross-entropy loss
 class CrossEntropyLoss2d(nn.Module):
@@ -11,6 +34,143 @@ class CrossEntropyLoss2d(nn.Module):
 
     def forward(self, inputs, targets):
         return self.nll_loss(F.log_softmax(inputs,dim=1), targets)
+
+class Conv(nn.Module):
+    def __init__(self, inplanes, planes, size, stride=1):
+        super(Conv, self).__init__()
+        self.conv = nn.Conv2d(inplanes, planes, kernel_size=size, padding=size // 2, stride=stride)
+        self.bn = nn.BatchNorm2d(planes)
+
+    def forward(self, x):
+        return self.bn(F.relu(self.conv(x)))
+
+class View(nn.Module):
+    def __init__(self, numFeat):
+        super(View, self).__init__()
+        self.numFeat = numFeat
+
+    def forward(self, x):
+        return x.view(-1,self.numFeat)
+
+class ErrorMeasures():
+    def __init__(self,classify,numClass = 5, numBall = 1, numGoal = 2, numRobot = 5):
+        self.numClass = numClass
+        self.numBBs = numGoal+numBall+numRobot
+        self.numGoal = numGoal
+        self.numBall = numBall
+        self.numRobot = numRobot
+        self.classify = classify
+
+    def forward(self,pred,traget):
+        inputLen = pred.size(1)
+        classScores = pred if self.classify else pred[:, 0:inputLen:5]
+        classTargets = traget if self.classify else (traget[:, 0:inputLen:5] > 0.0)
+
+        _, predClass = torch.max(classScores, 1) if self.classify else 1,(classScores > 0.0)
+        correct = torch.sum( predClass == classTargets ).item()
+
+        confusion = torch.zeros([self.numClass,self.numClass]).long() if self.classify else torch.zeros([3,3]).long()
+
+        if self.classify:
+            for j in range(pred.size(0)):
+                confusion[(predClass[j],classTargets[j])] += 1
+        else:
+            for i in range(predClass.size(0)):
+                for j in range(predClass.size(1)):
+                    rowInd = (1+predClass[i,j]-classTargets[i,j]).item()
+                    colInd = 0 if j < self.numBall else 1 if j < self.numBall + self.numRobot else 2
+                    confusion[(rowInd,colInd)] += 1
+
+        IoU = 0.0
+        if not self.classify:
+            cnt = 1e-5
+            for i in range(pred.size(0)):
+                for j in range(0,pred.size(1),5):
+                    if traget[i,j] > 0.0 and pred[i,j] > 0.0:
+                        IoU = IoU + bb_intersection_over_union(traget[i,j+1:j+5].float(),pred[i,j+1:j+5].float())
+                        cnt += 1
+
+            IoU = IoU / cnt
+
+        return correct, confusion, IoU
+
+
+class ROBOLoss(nn.Module):
+    def __init__(self, BBLossWeight=0.1):
+        super(ROBOLoss, self).__init__()
+        self.BBLossWeight = BBLossWeight
+        self.ClassLossFun = nn.MSELoss()
+        self.BBLossFun = nn.MSELoss(size_average=False, reduce=False)
+
+    def forward(self, inputs, targets):
+        inputLen = inputs.size(1)
+        classScores = inputs[:, 0:inputLen:5]
+        classTargets = targets[:, 0:inputLen:5] > 0.0
+
+        classLoss = self.ClassLossFun(F.sigmoid(classScores).float(), classTargets.float())
+
+        BBLoss = 0
+
+        for cntr,i in enumerate(range(0, inputLen, 5)):
+            losses = self.BBLossFun(inputs[:, i + 1:i + 5].float(), targets[:, i + 1:i + 5].float()).sum(dim=1)/4
+            BBLoss = BBLoss + torch.dot(classTargets[:, cntr].float(), losses.float()) / (torch.sum(classTargets[:, cntr].float())+ 1e-5)
+
+        return classLoss + self.BBLossWeight * BBLoss
+
+
+class ROBO(nn.Module):
+    def __init__(self, numFeat = 8, depth = 7, levels = 1, classify = False, numClass = 5, numBall = 1, numRobot = 5, numGoal = 2):
+        super(ROBO,self).__init__()
+        self.numFeat = numFeat
+        self.maxDepth = numFeat*int(pow(2,depth-1))
+        self.depth = depth
+        self.levels = levels
+        self.classify = classify
+        self.numClass = numClass
+        self.outNum = numRobot+numBall+numGoal
+        PixNum = 160*120
+
+        self.computation = []
+
+        self.feature = nn.Sequential()
+
+        for i in range(depth):
+
+            oDepth = numFeat * int(pow(2,i))
+
+            for j in range(levels):
+
+                iDepth = oDepth if j > 0 else oDepth//2 if i > 0 else 3
+
+                self.feature.add_module(("Conv%d%d"%(i,j)),Conv(iDepth,oDepth,3))
+                self.computation.append(iDepth*oDepth*9*PixNum)
+
+            self.feature.add_module(("Pool%d"%i),Conv(oDepth,oDepth,3,2))
+            PixNum = PixNum//4
+            self.computation.append(oDepth*oDepth*9*PixNum)
+
+        self.classifier = nn.Sequential()
+        self.classifier.add_module("Pool",nn.AdaptiveMaxPool2d(1))
+        self.classifier.add_module("View",View(self.maxDepth))
+        self.classifier.add_module("Dropout",nn.Dropout(0.5))
+        self.classifier.add_module("Class",nn.Linear(self.maxDepth,numClass))
+
+        self.ROBOOut = nn.Sequential()
+        self.ROBOOut.add_module("Pool",nn.AdaptiveMaxPool2d(1))
+        self.ROBOOut.add_module("View",View(self.maxDepth))
+        self.ROBOOut.add_module("Dropout",nn.Dropout(0.5))
+        self.computation.append(self.maxDepth*self.maxDepth*self.outNum*5)
+        self.ROBOOut.add_module("ROBO",nn.Linear(self.maxDepth,self.outNum*5))
+
+
+    def forward(self,x):
+
+        x = self.feature(x)
+
+        x = self.classifier(x) if self.classify else self.ROBOOut(x)
+
+        return x
+
 
 class DUC(nn.Module):
     def __init__(self, inplanes, planes, upscale_factor=2):
