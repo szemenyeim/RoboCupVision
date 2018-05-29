@@ -17,7 +17,7 @@ import argparse
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--preTrain", help="Pretrain on the classification dataset",
+    parser.add_argument("--pretrain", help="Pretrain on the classification dataset",
                         action="store_true")
     parser.add_argument("--finetune", help="Finetune the network on the real dataset",
                         action="store_true")
@@ -29,7 +29,7 @@ if __name__ == "__main__":
                         action="store_true")
     args = parser.parse_args()
 
-    preTrain = args.preTrain
+    preTrain = args.pretrain
     fineTune = args.finetune
     pruning = args.prune
     deep = args.deep
@@ -68,7 +68,7 @@ if __name__ == "__main__":
     if haveCuda:
         torch.cuda.manual_seed(seed)
 
-    batchSize = 8 if (fineTune or noScale) else 32
+    batchSize = 8 if (fineTune or noScale) else 64 if preTrain else 32
 
     root = "./data/FinetuneHorizon" if fineTune else "./data"
 
@@ -78,12 +78,16 @@ if __name__ == "__main__":
 
     else:
         trainSet = ODDataSet(root, split="train", img_transform=input_transform_tr,label_transform=None)
-        valSet = ODDataSet(root, split="val", img_transform=input_transform, label_transform=None)
+        valSet = ODDataSet(root, split="val", img_transform=input_transform, label_transform=None, bbMean=trainSet.means, bbStd=trainSet.std)
+
+    Tensor = torch.cuda.FloatTensor if haveCuda else torch.FloatTensor
+    BBMeans = None if preTrain else Tensor(trainSet.means)
+    BBSTD = None if preTrain else Tensor(trainSet.std)
 
     sampler = None #data.sampler.SubsetRandomSampler(range(64))
 
-    trainloader = data.DataLoader(trainSet, batch_size=batchSize, sampler=sampler, shuffle=True, num_workers=4)
-    valloader = data.DataLoader(valSet, batch_size=batchSize, sampler=sampler, shuffle=False, num_workers=4)
+    trainloader = data.DataLoader(trainSet, batch_size=batchSize, sampler=sampler, shuffle=True, num_workers=6)
+    valloader = data.DataLoader(valSet, batch_size=batchSize, sampler=sampler, shuffle=False, num_workers=6)
 
     numClass = 5
     numPlanes = 32 if deep else 8
@@ -107,12 +111,12 @@ if __name__ == "__main__":
         indices = pruneModel(model.parameters())
 
     criterion = CrossEntropyLoss() if preTrain else ROBOLoss()
-    measure = ErrorMeasures(preTrain)
+    measure = ErrorMeasures(preTrain,BBMeans,BBSTD)
 
     epochs = 100 if noScale else 200
     lr = 1e-1
-    weight_decay = 1e-3
-    momentum = 0.5
+    weight_decay = 1e-5
+    momentum = 0.1
     patience = 10 if noScale else 20
 
     if fineTune:
@@ -128,7 +132,7 @@ if __name__ == "__main__":
 
     def cb():
         print("Best Model reloaded")
-        stateDict = torch.load("./pth/bestROBO" + scaleStr + deepStr + fineTuneStr + pruneStr + ".pth",
+        stateDict = torch.load("./pth/bestROBO" + preTrainStr + scaleStr + deepStr + fineTuneStr + pruneStr + ".pth",
                                map_location=mapLoc)
         model.load_state_dict(stateDict)
 
@@ -142,10 +146,12 @@ if __name__ == "__main__":
 
     for epoch in range(epochs):
 
+        torch.set_grad_enabled(True)
         model.train()
         running_loss = 0.0
         running_acc = 0.0
         IoU = 0.0
+        bbCnt = 0
         imgCnt = 0
         bar = progressbar.ProgressBar(0,len(trainloader),redirect_stdout=False)
         for i, (images, labels) in enumerate(trainloader):
@@ -155,7 +161,7 @@ if __name__ == "__main__":
 
             optimizer.zero_grad()
 
-            pred = model(images.float())
+            pred = model(images)
             loss = criterion(pred,labels)
 
             loss.backward()
@@ -170,9 +176,10 @@ if __name__ == "__main__":
 
             running_loss += loss.item()
 
-            correct, conf, currIoU = measure.forward(pred,labels)
+            correct, conf, currIoU, cnt = measure.forward(pred,labels)
             running_acc += correct
             IoU += currIoU
+            bbCnt += cnt
 
             bSize = images.size()[0]
             imgCnt += bSize
@@ -180,13 +187,15 @@ if __name__ == "__main__":
             bar.update(i)
 
         bar.finish()
-        print("Epoch [%d] Training Loss: %.4f Training Acc: %.2f IoU: %.2f" % (epoch+1, running_loss/(i+1), running_acc/(imgCnt)*100, IoU/(i+1)))
+        print("Epoch [%d] Training Loss: %.4f Training Acc: %.2f IoU: %.2f" % (epoch+1, running_loss/(i+1), running_acc/(imgCnt)*100, IoU/bbCnt*100))
         #ploter.plot("loss", "train", epoch+1, running_loss/(i+1))
 
+        torch.set_grad_enabled(False)
         running_loss = 0.0
         running_acc = 0.0
         imgCnt = 0
-        conf = torch.zeros(numClass,numClass).long() if preTrain else torch.zeros(3,3).long()
+        bbCnt = 0
+        conf = torch.zeros(numClass,numClass).long() if preTrain else torch.zeros(4,3).long()
         IoU = 0.0
 
         model.eval()
@@ -196,15 +205,16 @@ if __name__ == "__main__":
                 images = images.cuda()
                 labels = labels.cuda()
 
-            pred = model(images.float())
+            pred = model(images)
             loss = criterion(pred,labels)
 
             running_loss += loss.item()
 
-            correct, confusion, currIoU = measure.forward(pred,labels)
+            correct, confusion, currIoU, cnt = measure.forward(pred,labels)
             running_acc += correct
             conf += confusion
             IoU += currIoU
+            bbCnt += cnt
 
             bSize = images.size()[0]
             imgCnt += bSize
@@ -213,8 +223,8 @@ if __name__ == "__main__":
 
         bar.finish()
         currLoss = running_loss/(i+1)
-        print("Epoch [%d] Validation Loss: %.4f Validation Pixel Acc: %.2f IoU: %.2f" %
-              (epoch+1, running_loss/(i+1), running_acc/(imgCnt)*100,IoU/(i+1)))
+        print("Epoch [%d] Validation Loss: %.4f Validation Acc: %.2f IoU: %.2f" %
+              (epoch+1, running_loss/(i+1), running_acc/(imgCnt)*100,IoU/bbCnt*100))
         #ploter.plot("loss", "val", epoch+1, running_loss/(i+1))
 
         if bestLoss > currLoss:
@@ -222,7 +232,7 @@ if __name__ == "__main__":
             print(conf)
             bestConf = conf
             bestLoss = currLoss
-            bestIoU = IoU/(i+1)
+            bestIoU = IoU/bbCnt*100
             bestAcc = running_acc/(imgCnt)
 
             torch.save(model.state_dict(), "./pth/bestROBO" + preTrainStr + scaleStr + deepStr + fineTuneStr + pruneStr + ".pth")

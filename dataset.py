@@ -32,13 +32,13 @@ def get_immediate_subdirectories(a_dir):
 
 
 class ODDataSet(data.Dataset):
-    def __init__(self, root, split="train", img_transform=None, label_transform=None, numBall = 1, numRobot = 5, numGoal = 2):
+    def __init__(self, root, split="train", img_transform=None, label_transform=None, bbMean = None, bbStd = None, numBall = 1, numRobot = 5, numGoal = 2):
 
         self.numBBs = numBall+numGoal+numRobot
         self.root = root
         self.split = split
         self.images = []
-        self.labels = np.empty([0,5*self.numBBs])
+        self.labels = np.empty([0,5*self.numBBs]).astype('float32')
         self.img_transform = img_transform
         self.label_transform = label_transform
 
@@ -55,7 +55,11 @@ class ODDataSet(data.Dataset):
             labArray = self.label2Array(currLab)
             self.labels = np.append(self.labels,labArray,0)
 
-        self.labels = (self.labels - np.mean(self.labels,0)) / np.std(self.labels,0)
+
+        self.means = bbMean if bbMean is not None else np.mean(self.labels,0)
+        self.std = bbStd if bbStd is not None else (np.std(self.labels,0) +1e-5)
+
+        self.labels = (self.labels - self.means) / self.std
 
 
     def label2Array(self,label):
@@ -67,7 +71,7 @@ class ODDataSet(data.Dataset):
             for BB in label:
                 if BB[0] == 1:
                     labArray[0,0] = 1
-                    labArray[0,1:5] = BB[1]-self.bMeans
+                    labArray[0,1:5] = BB[1]
                 elif BB[0] == 2:
                     robots = np.append(robots,BB[1])
                 elif BB[0] == 3:
@@ -80,7 +84,7 @@ class ODDataSet(data.Dataset):
                 for i,ind in enumerate(row_ind):
                     arrOffs = (ind+1)*5
                     labArray[0,arrOffs] = 1
-                    labArray[0,arrOffs+1:arrOffs+5] = robots[i]-self.rMeans[ind]
+                    labArray[0,arrOffs+1:arrOffs+5] = robots[i]
             if goals.shape[0] > 0:
                 goals = np.reshape(goals,(-1,4))
                 goalDist = cdist(goals,self.gMeans)
@@ -88,9 +92,9 @@ class ODDataSet(data.Dataset):
                 for i,ind in enumerate(row_ind):
                     arrOffs = (ind+6)*5
                     labArray[0,arrOffs] = 1
-                    labArray[0,arrOffs+1:arrOffs+5] = goals[i]-self.gMeans[ind]
+                    labArray[0,arrOffs+1:arrOffs+5] = goals[i]
 
-            return labArray
+            return labArray.astype('float32')
 
     def __len__(self):
         return len(self.images)

@@ -1,8 +1,8 @@
 import torch
-from torch.autograd import Variable
+from torch import nn
 from torch.utils import data
 import lr_scheduler
-from model import  CrossEntropyLoss2d, PB_FCN, loadModel, pruneModel
+from model import  CrossEntropyLoss2d, PB_FCN, loadModel, pruneModel, PB_FCN_2
 from duc import SegFull
 from dataset import SSDataSet
 from transform import Scale, ToLabel, HorizontalFlip, VerticalFlip, ToYUV
@@ -25,18 +25,22 @@ if __name__ == "__main__":
                         action="store_true")
     parser.add_argument("--noScale", help="Use VGA resolution",
                         action="store_true")
+    parser.add_argument("--v2", help="Use PB-FCNv2",
+                        action="store_true")
     args = parser.parse_args()
 
     fineTune = args.finetune
     pruning = args.prune
     deep = args.deep
     noScale = args.noScale
+    v2 = args.v2
     haveCuda = torch.cuda.is_available()
 
     fineTuneStr = "Finetuned" if fineTune else ""
     pruneStr = "Pruned" if pruning else ""
     deepStr = "Deep" if deep else ""
     scaleStr = "VGA" if noScale else ""
+    v2Str = "v2" if v2 else ""
     scale = 1 if noScale else 4
 
     labSize = (480.0/scale, 640.0/scale)
@@ -85,11 +89,11 @@ if __name__ == "__main__":
 
     trainloader = data.DataLoader(SSDataSet(root, split="train", img_transform=input_transform_tr,
                                              label_transform=target_transform_tr),
-                                  batch_size=batchSize, shuffle=True, num_workers=4)
+                                  batch_size=batchSize, shuffle=True, num_workers=6)
 
     valloader = data.DataLoader(SSDataSet(root, split="val", img_transform=input_transform,
                                              label_transform=target_transform),
-                                  batch_size=1, shuffle=True, num_workers=4)
+                                  batch_size=batchSize, shuffle=True, num_workers=6)
 
 
     numClass = 5
@@ -97,6 +101,8 @@ if __name__ == "__main__":
     kernelSize = 1
     if deep:
         model = SegFull(numClass)
+    elif v2:
+        model = PB_FCN_2(False)
     else:
         model = PB_FCN(numPlanes, numClass, kernelSize, noScale, 0)
 
@@ -110,7 +116,15 @@ if __name__ == "__main__":
         model = model.cuda()
         weights = weights.cuda()
 
-    loadModel(model,noScale,deep,fineTune,pruning,mapLoc)
+    loadModel(model,noScale,v2,deep,fineTune,pruning,mapLoc)
+
+    if v2 and not fineTune:
+        for m in model.upPart.modules():
+            if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d) or isinstance(m, nn.BatchNorm2d):
+                m.reset_parameters()
+        for m in model.segmenter.modules():
+            if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d) or isinstance(m, nn.BatchNorm2d):
+                m.reset_parameters()
 
     if fineTune & pruning:
         indices = pruneModel(model.parameters())
@@ -125,6 +139,7 @@ if __name__ == "__main__":
 
     if fineTune:
         lr *= 0.1
+        weight_decay = 1e-3
         momentum = 0.1
         epochs = 250 if noScale else 500
         patience = 25 if noScale else 50
@@ -138,12 +153,12 @@ if __name__ == "__main__":
 
     def cb():
         print("Best Model reloaded")
-        stateDict = torch.load("./pth/bestModelSeg" + scaleStr + deepStr + fineTuneStr + pruneStr + ".pth",
+        stateDict = torch.load("./pth/bestModelSeg" + scaleStr  + v2Str + deepStr + fineTuneStr + pruneStr + ".pth",
                                map_location=mapLoc)
         model.load_state_dict(stateDict)
 
     scheduler = lr_scheduler.ReduceLROnPlateau(optimizer,'min',factor=0.5,patience=patience,verbose=True,cb=cb)
-    ploter = LinePlotter()
+    ploter = LinePlotter("RoboCup")
 
     bestLoss = 100
     bestAcc = 0
@@ -173,7 +188,8 @@ if __name__ == "__main__":
                 pIdx = 0
                 for param in model.parameters():
                     if param.dim() > 1:
-                        param.grad.data[indices[pIdx]] = 0
+                        if param.grad is not None:
+                            param.grad[indices[pIdx]] = 0
                         pIdx += 1
 
             optimizer.step()
@@ -220,17 +236,18 @@ if __name__ == "__main__":
                 maskPred[currClass] = predClass == currClass
                 maskLabel[currClass] = labels == currClass
 
-            for labIdx in range(numClass):
-                labCnts[labIdx] += torch.sum(maskLabel[labIdx]).item()
-                for predIdx in range(numClass):
-                    inter = torch.sum(maskPred[predIdx] & maskLabel[labIdx]).item()
-                    conf[(predIdx, labIdx)] += inter
-                    if labIdx == predIdx:
-                        union = torch.sum(maskPred[predIdx] | maskLabel[labIdx]).item()
-                        if union == 0:
-                            IoU[labIdx] += 1
-                        else:
-                            IoU[labIdx] += inter/union
+            for imgInd in range(bSize):
+                for labIdx in range(numClass):
+                    labCnts[labIdx] += torch.sum(maskLabel[labIdx,imgInd]).item()
+                    for predIdx in range(numClass):
+                        inter = torch.sum(maskPred[predIdx,imgInd] & maskLabel[labIdx,imgInd]).item()
+                        conf[(predIdx, labIdx)] += inter
+                        if labIdx == predIdx:
+                            union = torch.sum(maskPred[predIdx,imgInd] | maskLabel[labIdx,imgInd]).item()
+                            if union == 0:
+                                IoU[labIdx] += 1
+                            else:
+                                IoU[labIdx] += inter/union
 
             bar.update(i)
 
@@ -256,7 +273,7 @@ if __name__ == "__main__":
             bestAcc = meanClassAcc
             bestTAcc = running_acc/(imgCnt)
 
-            torch.save(model.state_dict(), "./pth/bestModelSeg" + scaleStr + deepStr + fineTuneStr + pruneStr + ".pth")
+            torch.save(model.state_dict(), "./pth/bestModelSeg" + scaleStr + v2Str  + deepStr + fineTuneStr + pruneStr + ".pth")
 
         scheduler.step(currLoss)
 

@@ -1,7 +1,7 @@
 import torch
 from torch.autograd import Variable
 from torch.utils import data
-from model import PB_FCN, FCN
+from model import PB_FCN, FCN, PB_FCN_2
 from duc import SegFull
 from dataset import SSDataSet
 from transform import Scale, ToLabel, Colorize, ToYUV
@@ -25,6 +25,12 @@ if __name__ == "__main__":
                         action="store_true")
     parser.add_argument("--FCN", help="Use Normal FCN Network",
                         action="store_true")
+    parser.add_argument("--v2", help="Use PB-FCNv2",
+                        action="store_true")
+    parser.add_argument("--dump", help="Dump model parameters",
+                        action="store_true")
+    parser.add_argument("--useCuda", help="Test on GPU",
+                        action="store_true")
     args = parser.parse_args()
 
     fineTune = args.finetuned
@@ -32,6 +38,9 @@ if __name__ == "__main__":
     deep = args.deep
     noScale = args.noScale
     useFCN = args.FCN
+    v2 = args.v2
+    dump = args.dump
+    useCuda = torch.cuda.is_available() if args.useCuda else False
     if useFCN: noScale = False
 
 
@@ -40,6 +49,7 @@ if __name__ == "__main__":
     deepStr = "Deep" if deep else ""
     FCNStr = "1" if useFCN else ""
     scaleStr = "VGA" if noScale else ""
+    v2Str = "v2" if v2 else ""
     scale = 1 if noScale else 4
 
     input_transform = Compose([
@@ -75,19 +85,25 @@ if __name__ == "__main__":
     numPlanes = 32
     if deep:
         model = SegFull(numClass)
+    elif v2:
+        model = PB_FCN_2(False)
     elif useFCN:
         model = FCN()
     else:
         model = PB_FCN(numPlanes, numClass, kernelSize, noScale, 0)
+
     mapLoc = {'cuda:0': 'cpu'}
-    if torch.cuda.is_available():
+    if useCuda:
         model = model.cuda()
         mapLoc = None
 
-    stateDict = torch.load("./pth/bestModelSeg" + FCNStr + scaleStr + deepStr + fineTuneStr + pruneStr + ".pth", map_location=mapLoc)
+    stateDict = torch.load("./pth/bestModelSeg" + FCNStr + scaleStr + v2Str + deepStr + fineTuneStr + pruneStr + ".pth", map_location=mapLoc)
     model.load_state_dict(stateDict)
 
-    saveParams("./weights" + ("VGA" if noScale else ""), model.cpu())
+    if dump:
+        saveParams("./weights" + ("VGA" if noScale else ""), model.cpu())
+        if useCuda:
+            model = model.cuda()
 
     running_acc = 0.0
     imgCnt = 0
@@ -99,7 +115,7 @@ if __name__ == "__main__":
     t = 0
     bar = progressbar.ProgressBar(0, len(valloader), redirect_stdout=False)
     for i, (images, labels) in enumerate(valloader):
-        if torch.cuda.is_available():
+        if useCuda:
             images = images.cuda()
             labels = labels.cuda()
 
@@ -123,18 +139,18 @@ if __name__ == "__main__":
             maskPred[currClass] = predClass == currClass
             maskLabel[currClass] = labels == currClass
 
-        for labIdx in range(numClass):
-            labCnts[labIdx] += torch.sum(maskLabel[labIdx]).item()
-            for predIdx in range(numClass):
-                inter = torch.sum(maskPred[predIdx] & maskLabel[labIdx]).item()
-                conf[(predIdx, labIdx)] += inter
-                if labIdx == predIdx:
+        for imgInd in range(bSize):
+            for labIdx in range(numClass):
+                labCnts[labIdx] += torch.sum(maskLabel[labIdx, imgInd]).item()
+                for predIdx in range(numClass):
+                    inter = torch.sum(maskPred[predIdx, imgInd] & maskLabel[labIdx, imgInd]).item()
+                    conf[(predIdx, labIdx)] += inter
                     if labIdx == predIdx:
-                        union = torch.sum(maskPred[predIdx] | maskLabel[labIdx]).item()
+                        union = torch.sum(maskPred[predIdx, imgInd] | maskLabel[labIdx, imgInd]).item()
                         if union == 0:
                             IoU[labIdx] += 1
                         else:
-                            IoU[labIdx] += inter/union
+                            IoU[labIdx] += inter / union
 
         bar.update(i)
 

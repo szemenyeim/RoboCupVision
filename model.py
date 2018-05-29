@@ -3,26 +3,34 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+def getParamSize(x):
+    size = x.size()
+    len = 1
+    for s in size:
+        len *= s
+    return len
+
 def bb_intersection_over_union(boxA, boxB):
     # determine the (x, y)-coordinates of the intersection rectangle
     xA = max(boxA[0], boxB[0])
     yA = max(boxA[1], boxB[1])
-    xB = min(boxA[2], boxB[2])
-    yB = min(boxA[3], boxB[3])
+    xB = min(boxA[0]+boxA[2], boxB[0]+boxB[2])
+    yB = min(boxA[1]+boxA[3], boxB[1]+boxB[3])
 
     # compute the area of intersection rectangle
-    interArea = (xB - xA + 1) * (yB - yA + 1)
+    side1 = (xB - xA + 1)
+    side2 = (yB - yA + 1)
+    interArea = 0.0 if side1 <= 0.0 or side2 <= 0.0 else side1*side2
 
     # compute the area of both the prediction and ground-truth
     # rectangles
-    boxAArea = (boxA[2] - boxA[0] + 1) * (boxA[3] - boxA[1] + 1)
-    boxBArea = (boxB[2] - boxB[0] + 1) * (boxB[3] - boxB[1] + 1)
+    boxAArea = boxA[2]*boxA[3]
+    boxBArea = boxB[2]*boxB[3]
 
     # compute the intersection over union by taking the intersection
     # area and dividing it by the sum of prediction + ground-truth
     # areas - the interesection area
-    iou = interArea / float(boxAArea + boxBArea - interArea)
-
+    iou = interArea / (boxAArea + boxBArea + 1e-5)
     # return the intersection over union value
     return iou
 
@@ -53,23 +61,25 @@ class View(nn.Module):
         return x.view(-1,self.numFeat)
 
 class ErrorMeasures():
-    def __init__(self,classify,numClass = 5, numBall = 1, numGoal = 2, numRobot = 5):
+    def __init__(self,classify, tMeans, tStd, numClass = 5, numBall = 1, numGoal = 2, numRobot = 5):
         self.numClass = numClass
         self.numBBs = numGoal+numBall+numRobot
         self.numGoal = numGoal
         self.numBall = numBall
         self.numRobot = numRobot
         self.classify = classify
+        self.tMeans = tMeans
+        self.tStd = tStd
 
     def forward(self,pred,traget):
         inputLen = pred.size(1)
         classScores = pred if self.classify else pred[:, 0:inputLen:5]
         classTargets = traget if self.classify else (traget[:, 0:inputLen:5] > 0.0)
 
-        _, predClass = torch.max(classScores, 1) if self.classify else 1,(classScores > 0.0)
-        correct = torch.sum( predClass == classTargets ).item()
+        _, predClass = torch.max(classScores, 1) if self.classify else (1,(classScores > 0.0))
+        correct = torch.sum( predClass == classTargets ).item()/self.numBBs
 
-        confusion = torch.zeros([self.numClass,self.numClass]).long() if self.classify else torch.zeros([3,3]).long()
+        confusion = torch.zeros([self.numClass,self.numClass]).long() if self.classify else torch.zeros([4,3]).long()
 
         if self.classify:
             for j in range(pred.size(0)):
@@ -77,22 +87,24 @@ class ErrorMeasures():
         else:
             for i in range(predClass.size(0)):
                 for j in range(predClass.size(1)):
-                    rowInd = (1+predClass[i,j]-classTargets[i,j]).item()
+                    positive = classTargets[i,j].item()
+                    predicted = predClass[i,j].item()
+                    rowInd = positive + (0 if positive==predicted else 2)
                     colInd = 0 if j < self.numBall else 1 if j < self.numBall + self.numRobot else 2
                     confusion[(rowInd,colInd)] += 1
 
         IoU = 0.0
+        cnt = 0
         if not self.classify:
-            cnt = 1e-5
+            traget = traget*self.tStd + self.tMeans
+            pred = pred*self.tStd + self.tMeans
             for i in range(pred.size(0)):
                 for j in range(0,pred.size(1),5):
                     if traget[i,j] > 0.0 and pred[i,j] > 0.0:
-                        IoU = IoU + bb_intersection_over_union(traget[i,j+1:j+5].float(),pred[i,j+1:j+5].float())
+                        IoU = IoU + bb_intersection_over_union(traget[i,j+1:j+5],pred[i,j+1:j+5])
                         cnt += 1
 
-            IoU = IoU / cnt
-
-        return correct, confusion, IoU
+        return correct, confusion, IoU, cnt
 
 
 class ROBOLoss(nn.Module):
@@ -105,17 +117,19 @@ class ROBOLoss(nn.Module):
     def forward(self, inputs, targets):
         inputLen = inputs.size(1)
         classScores = inputs[:, 0:inputLen:5]
-        classTargets = targets[:, 0:inputLen:5] > 0.0
+        classTargets = (targets[:, 0:inputLen:5] > 0.0).float()
 
-        classLoss = self.ClassLossFun(F.sigmoid(classScores).float(), classTargets.float())
+        classLoss = self.ClassLossFun(F.sigmoid(classScores), classTargets)
 
         BBLoss = 0
 
         for cntr,i in enumerate(range(0, inputLen, 5)):
-            losses = self.BBLossFun(inputs[:, i + 1:i + 5].float(), targets[:, i + 1:i + 5].float()).sum(dim=1)/4
-            BBLoss = BBLoss + torch.dot(classTargets[:, cntr].float(), losses.float()) / (torch.sum(classTargets[:, cntr].float())+ 1e-5)
+            losses = self.BBLossFun(inputs[:, i + 1:i + 5], targets[:, i + 1:i + 5]).sum(dim=1)/4
+            BBLoss = BBLoss + torch.dot(classTargets[:, cntr], losses) / (torch.sum(classTargets[:, cntr])+ 1e-5)
 
-        return classLoss + self.BBLossWeight * BBLoss
+        loss = classLoss + self.BBLossWeight * BBLoss
+
+        return loss
 
 
 class ROBO(nn.Module):
@@ -358,6 +372,108 @@ class DownSampler(nn.Module):
 
         return x4, x3, x2, x1, x0
 
+
+class ConvSep(nn.Module):
+    def __init__(self, inplanes, planes, size, stride=1):
+        super(ConvSep, self).__init__()
+        dilation = 1 if stride > 1 else 2
+        padding = size//2 + dilation - 1
+        self.conv_nx1 = nn.Conv2d(inplanes, planes//2, dilation=dilation, kernel_size=(size,1), padding=(padding,0), stride=stride, bias=False)
+        self.conv_1xn = nn.Conv2d(inplanes, planes//2, dilation=dilation, kernel_size=(1,size), padding=(0,padding), stride=stride, bias=False)
+        self.conv_1x1 = nn.Conv2d(planes, planes, kernel_size=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(planes)
+        self.bn2 = nn.BatchNorm2d(planes)
+
+    def forward(self, x):
+        x = F.relu(self.bn1(torch.cat([self.conv_nx1(x),self.conv_1xn(x)],1)))
+        return F.relu(self.bn2(self.conv_1x1(x)))
+
+class trConvSep(nn.Module):
+    def __init__(self, inplanes, planes):
+        super(trConvSep, self).__init__()
+        self.conv = nn.Conv2d(inplanes, planes, kernel_size=1, bias=False)
+        self.trconv1x3 = nn.ConvTranspose2d(planes, planes, kernel_size=(1,3),
+                              padding=(0,1), stride=2, output_padding=1, bias=False)
+        self.trconv3x1 = nn.ConvTranspose2d(planes, planes, kernel_size=(3,1),
+                              padding=(1,0), stride=2, output_padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(planes)
+        self.bn2 = nn.BatchNorm2d(planes)
+
+    def forward(self, x):
+        x = F.relu(self.bn1(self.conv(x)))
+        x = F.relu(self.bn2(self.trconv1x3(x)+self.trconv3x1(x)))
+        return x
+
+class LevelDown(nn.Module):
+    def __init__(self, inplanes, planes, levels, doPool):
+        super(LevelDown,self).__init__()
+
+        self.layers = nn.Sequential()
+        self.layers.add_module("Conv0", ConvSep(inplanes,planes,3,stride=(2 if doPool else 1)))
+
+        for i in range(levels-1):
+            self.layers.add_module(("Conv%d"%(i+1)), ConvSep(planes,planes,3))
+
+    def forward(self, x):
+        return self.layers(x)
+
+class UltClassifier(nn.Module):
+    def __init__(self, inplanes, nClass, pool, dropout=0.5):
+        super(UltClassifier,self).__init__()
+
+        self.layers = nn.Sequential()
+        if pool:
+            self.layers.add_module("Pool",nn.AdaptiveAvgPool2d(1))
+            self.layers.add_module("DO",nn.Dropout2d(dropout))
+        self.layers.add_module("Class",nn.Conv2d(inplanes,nClass,1))
+
+    def forward(self, x):
+        return self.layers(x)
+
+class PB_FCN_2(nn.Module):
+    def __init__(self, classify, nClass=5, planes=8, depth=4, levels=2, bellySize=5, bellyPlanes=128):
+        super(PB_FCN_2,self).__init__()
+
+        self.classify = classify
+
+        maxDepth = planes*pow(2,depth-1)
+
+        self.downPart = nn.ModuleList()
+        self.downPart.add_module("Level0",LevelDown(3,planes,1,False))
+        for i in range(depth-1):
+            nCh = planes*pow(2,i)
+            self.downPart.add_module(("Level%d"%(i+1)),LevelDown(nCh,nCh*2,levels,True))
+
+        self.PB = nn.Sequential()
+        self.PB.add_module("PB_1",LevelDown(maxDepth,bellyPlanes,bellySize-1,False))
+        self.PB.add_module("PB_2",LevelDown(bellyPlanes,maxDepth,1,False))
+
+        self.upPart = nn.ModuleList()
+        for i in range(depth-1):
+            nCh = planes*pow(2,depth-1-i)
+            self.upPart.add_module(("Up%d"%i),upSampleTransposeConv(nCh,nCh//2,0))
+            #self.upPart.add_module(("Up%d" % i), trConvSep(nCh, nCh // 2))
+
+        self.classifier = UltClassifier(maxDepth,nClass,True)
+        self.segmenter = UltClassifier(planes,nClass,False)
+
+    def forward(self, x):
+
+        downs = [x]
+        for i,layer in enumerate(self.downPart):
+            downs.append(layer(downs[-1]))
+
+        downs[-1] = self.PB(downs[-1])
+
+        if self.classify:
+            return self.classifier(downs[-1])
+
+        up = downs[-1]
+        for i,layer in enumerate(self.upPart):
+            up = layer(up) + downs[-(i+2)]
+
+        return self.segmenter(up)
+
 class DownSamplerThick(nn.Module):
     def __init__(self, planes, dropout):
         super(DownSamplerThick, self).__init__()
@@ -463,9 +579,9 @@ class BNNMC(nn.Module):
         return x
 
 
-def loadModel(model,noScale,deep,fineTune,prune,mapLoc):
-    path = "./pth/bestModel" + ("Seg" if fineTune else "") + ("VGA" if noScale else "") + ("Deep" if deep else "") + ("Finetuned" if prune else "") + ".pth"
-    if fineTune:
+def loadModel(model,noScale,v2,deep,fineTune,prune,mapLoc):
+    path = "./pth/bestModel" + ("Seg" if fineTune else "") + ("VGA" if noScale else "") + ("v2" if v2 else "") + ("Deep" if deep else "") + ("Finetuned" if prune else "") + ".pth"
+    if fineTune or v2:
         stateDict = torch.load(path, map_location=mapLoc)
         model.load_state_dict(stateDict)
     else:
@@ -495,5 +611,35 @@ def pruneModel(params, lower = 73, upper = 77):
             param[torch.abs(param) < thresh] = 0
             indices.append(torch.abs(param) < thresh)
             i += 1
+
+    return indices
+
+def pruneModel2(params, ratio):
+
+    indices = []
+    for param in params:
+        if param.dim() > 1:
+            r = ratio
+            if getParamSize(param) < 100:
+                r = 0
+            elif getParamSize(param) < 1000:
+                r = ratio*0.8
+            if getParamSize(param) > 100000:
+                r = ratio*1.05
+            origShape = param.size()
+            param = torch.reshape(param,(-1,))
+
+            paramCnt = param.size(0)
+            amount = int(paramCnt*r)
+
+            if amount > 0:
+                _,idx = torch.topk(torch.abs(param),amount,dim=0,largest=False)
+                param[idx] = 0.0
+
+            param = torch.reshape(param,origShape)
+
+            print("Pruned %d of %d weights (%.3f%%)" % (amount,paramCnt,r))
+
+            indices.append((param==0.0))
 
     return indices

@@ -144,7 +144,7 @@ def convert(root, split="val"):
         pickle.dump(preds, f)
 
 if __name__ == '__main__':
-    convert(root='./data/')
+    convert(root='./data/',split="train")
     convert(root='./data/',split="val")
-    convert(root='./data/FinetuneHorizon/')
+    convert(root='./data/FinetuneHorizon/',split="train")
     convert(root='./data/Finetunehorizon/',split="val")
