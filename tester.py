@@ -19,6 +19,8 @@ if __name__ == "__main__":
                         action="store_true")
     parser.add_argument("--pruned", help="Use pruned net",
                         action="store_true")
+    parser.add_argument("--pruned2", help="Use pruned2 net",
+                        action="store_true")
     parser.add_argument("--deep", help="Use Very deep model for reference",
                         action="store_true")
     parser.add_argument("--noScale", help="Use VGA resolution",
@@ -35,6 +37,7 @@ if __name__ == "__main__":
 
     fineTune = args.finetuned
     pruned = args.pruned
+    pruned2 = args.pruned2
     deep = args.deep
     noScale = args.noScale
     useFCN = args.FCN
@@ -45,7 +48,7 @@ if __name__ == "__main__":
 
 
     fineTuneStr = "Finetuned" if fineTune else ""
-    pruneStr = "Pruned" if pruned else ""
+    pruneStr = "Pruned" if pruned else "Pruned2" if pruned2 else ""
     deepStr = "Deep" if deep else ""
     FCNStr = "1" if useFCN else ""
     scaleStr = "VGA" if noScale else ""
@@ -101,7 +104,7 @@ if __name__ == "__main__":
     model.load_state_dict(stateDict)
 
     if dump:
-        saveParams("./weights" + ("VGA" if noScale else ""), model.cpu())
+        saveParams("./weights" + scaleStr + v2Str, model.cpu())
         if useCuda:
             model = model.cuda()
 

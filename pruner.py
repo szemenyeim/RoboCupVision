@@ -114,15 +114,12 @@ if __name__ == "__main__":
     lr = 1e-2
     weight_decay = 1e-3
     momentum = 0.1
-    epochs = 25 if noScale else 10
+    epochs = 10
     iters = 10
 
     outSize = 1.0/(labSize[0] * labSize[1])
 
 
-    optimizer = torch.optim.SGD( [ { 'params': model.parameters()}, ],
-                                lr=lr, momentum=momentum,
-                                weight_decay=weight_decay)
 
     def cb():
         print("Best Model reloaded")
@@ -135,6 +132,9 @@ if __name__ == "__main__":
     for iter in range(iters):
 
         limit = (iter + 1) * epochs
+        optimizer = torch.optim.SGD([{'params': model.parameters()}, ],
+                                    lr=lr, momentum=momentum,
+                                    weight_decay=weight_decay)
         scheduler = lr_scheduler.CosineAnnealingLR(optimizer,limit,1e-3)
 
         bestLoss = 100
@@ -146,7 +146,7 @@ if __name__ == "__main__":
         if iter > 0:
             cb()
         with torch.no_grad():
-            indices = pruneModel2(model.parameters(),(iter+1)*0.09)
+            indices = pruneModel2(model.parameters(),(iter+1)*0.08)
 
         for epoch in range(limit):
 
@@ -172,7 +172,7 @@ if __name__ == "__main__":
                 for param in model.parameters():
                     if param.dim() > 1:
                         if param.grad is not None:
-                            param.grad[indices[pIdx]] = 0
+                            param.grad[indices[pIdx]] = 0.0
                         pIdx += 1
 
                 optimizer.step()
