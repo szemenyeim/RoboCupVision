@@ -203,19 +203,17 @@ class DUC(nn.Module):
         return x
 
 class upSampleTransposeConv(nn.Module):
-    def __init__(self, inplanes, planes, dropout, upscale_factor=2):
+    def __init__(self, inplanes, planes):
         super(upSampleTransposeConv, self).__init__()
         self.relu = nn.ReLU()
         self.conv = nn.ConvTranspose2d(inplanes, planes, kernel_size=3,
                               padding=1, stride=2, output_padding=1, bias=True)
         self.bn = nn.BatchNorm2d(planes)
-        self.do = nn.Dropout2d(dropout)
 
     def forward(self, x):
         x = self.conv(x)
         x = self.bn(x)
         x = self.relu(x)
-        self.do(x)
         return x
 
 class ConvPool(nn.Module):
@@ -290,7 +288,7 @@ class Classifier(nn.Module):
         return self.classifier(x)
 
 class PB_FCN(nn.Module):
-    def __init__(self,planes, num_classes,kernelSize, noScale,dropout):
+    def __init__(self,planes, num_classes,kernelSize, noScale, dropout):
         super(PB_FCN, self).__init__()
 
         self.noScale = noScale
@@ -300,10 +298,10 @@ class PB_FCN(nn.Module):
 
         self.FCN = DownSampler(planes, noScale,dropout)
 
-        self.up1 = upSampleTransposeConv(planes*2,planes,dropout)
-        self.up2 = upSampleTransposeConv(planes,planes//2*muliplier,dropout)
-        self.up3 = upSampleTransposeConv(planes//2*muliplier,outPlanes*muliplier,dropout)
-        self.up4 = upSampleTransposeConv(planes//2,outPlanes,dropout) if noScale else None
+        self.up1 = upSampleTransposeConv(planes*2,planes)
+        self.up2 = upSampleTransposeConv(planes,planes//2*muliplier)
+        self.up3 = upSampleTransposeConv(planes//2*muliplier,outPlanes*muliplier)
+        self.up4 = upSampleTransposeConv(planes//2,outPlanes) if noScale else None
 
 
         self.classifier = Classifier(outPlanes,num_classes,kernelSize=kernelSize)
@@ -331,9 +329,9 @@ class FCN(nn.Module):
 
         self.FCN = DownSamplerThick(32,0)
 
-        self.up1 = upSampleTransposeConv(planes*2,planes,0)
-        self.up2 = upSampleTransposeConv(planes,planes//2,0)
-        self.up3 = upSampleTransposeConv(planes//2,planes//2,0)
+        self.up1 = upSampleTransposeConv(planes*2,planes)
+        self.up2 = upSampleTransposeConv(planes,planes//2)
+        self.up3 = upSampleTransposeConv(planes//2,planes//2)
 
         self.classifier = Classifier(planes//2,5,1)
 
@@ -380,8 +378,8 @@ class ConvSep(nn.Module):
         padding = size//2 + dilation - 1
         self.conv_nx1 = nn.Conv2d(inplanes, planes//2, dilation=dilation, kernel_size=(size,1), padding=(padding,0), stride=stride, bias=False)
         self.conv_1xn = nn.Conv2d(inplanes, planes//2, dilation=dilation, kernel_size=(1,size), padding=(0,padding), stride=stride, bias=False)
-        self.conv_1x1 = nn.Conv2d(planes, planes, kernel_size=1, bias=False)
         self.bn1 = nn.BatchNorm2d(planes)
+        self.conv_1x1 = nn.Conv2d(planes, planes, kernel_size=1, bias=False)
         self.bn2 = nn.BatchNorm2d(planes)
 
     def forward(self, x):
@@ -451,7 +449,7 @@ class PB_FCN_2(nn.Module):
         self.upPart = nn.ModuleList()
         for i in range(depth-1):
             nCh = planes*pow(2,depth-1-i)
-            self.upPart.add_module(("Up%d"%i),upSampleTransposeConv(nCh,nCh//2,0))
+            self.upPart.add_module(("Up%d"%i),upSampleTransposeConv(nCh,nCh//2))
             #self.upPart.add_module(("Up%d" % i), trConvSep(nCh, nCh // 2))
 
         self.classifier = UltClassifier(maxDepth,nClass,True)
@@ -508,9 +506,9 @@ class LabelProp(nn.Module):
         self.conv2 = ConvPoolSimple(numPlanes*2,numPlanes*2,3,1,2,2,False,dropout)
         self.conv3 = ConvPoolSimple(numPlanes*2,numPlanes,3,1,2,2,False,dropout)
 
-        self.upConv1 = upSampleTransposeConv(numPlanes,numPlanes//2,dropout)
-        self.upConv2 = upSampleTransposeConv(numPlanes//2,numPlanes//2,dropout)
-        self.upConv3 = upSampleTransposeConv(numPlanes//2,numPlanes//2,dropout)
+        self.upConv1 = upSampleTransposeConv(numPlanes,numPlanes//2)
+        self.upConv2 = upSampleTransposeConv(numPlanes//2,numPlanes//2)
+        self.upConv3 = upSampleTransposeConv(numPlanes//2,numPlanes//2)
         self.classifier = nn.Conv2d(numPlanes//2,numClass,1,padding=0)
 
     def forward(self,x):

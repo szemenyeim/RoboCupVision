@@ -133,6 +133,7 @@ if __name__ == "__main__":
         for j in range(bSize):
             img = Image.fromarray(Colorize(predClass.data[j]).permute(1, 2, 0).numpy().astype('uint8'))
             img.save(outDir + "%d.png" % (imgCnt + j))
+            print(outDir + "%d.png" % (imgCnt + j))
         imgCnt += bSize
 
 
