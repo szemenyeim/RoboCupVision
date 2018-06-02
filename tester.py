@@ -104,7 +104,7 @@ if __name__ == "__main__":
     model.load_state_dict(stateDict)
 
     if dump:
-        saveParams("./weights" + scaleStr + v2Str, model.cpu())
+        saveParams("./weights" + scaleStr + v2Str, model.cpu(), "weights.dat" if pruned else "weights2.dat")
         if useCuda:
             model = model.cuda()
 
