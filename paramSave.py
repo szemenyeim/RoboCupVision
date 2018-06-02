@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 
-def saveParams( path, model ):
+def saveParams( path, model, fName="weights.dat" ):
     i = 0
     params = np.empty(0)
     Dict = model.state_dict()
@@ -11,4 +11,4 @@ def saveParams( path, model ):
         param = Dict[name].numpy()
         param = param.reshape(param.size)
         params = np.concatenate((params, param));
-    params.tofile(path+"/weights.dat")
+    params.tofile(path+"/"+fName)

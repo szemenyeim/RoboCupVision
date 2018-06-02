@@ -1,5 +1,7 @@
 import torch
 from torch import nn
+import numpy as np
+from paramSave import saveParams
 
 
 class Concat(nn.Module):
@@ -18,6 +20,8 @@ class Shortcut(nn.Module):
 
 if __name__ == "__main__":
 
+    torch.autograd.set_grad_enabled(False)
+
 
     dataC1 = torch.randn((1,4,32,32))
     dataC2 = torch.randn((1,4,32,32))
@@ -26,7 +30,7 @@ if __name__ == "__main__":
     layers = nn.ModuleList()
 
     layers.add_module("FC",nn.Linear(32,16))
-    layers.add_module("BN",nn.BatchNorm2d(4,track_running_stats=False))
+    layers.add_module("BN",nn.BatchNorm2d(4))
     layers.add_module("Cat",Concat())
     layers.add_module("Short",Shortcut())
     layers.add_module("Reorg",nn.PixelShuffle(2))
@@ -48,12 +52,14 @@ if __name__ == "__main__":
     layers.add_module("C12",nn.Conv2d(4,8,kernel_size=(1,3),stride=2,padding=(0,2),dilation=(1,2)))
     layers.add_module("C13",nn.Conv2d(4,8,kernel_size=1,stride=1,padding=0,dilation=1))
 
-    layers.add_module("TrC",nn.ConvTranspose2d(4,8,kernel_size=3,stride=3,padding=1,dilation=1,output_padding=1))
+    layers.add_module("TrC",nn.ConvTranspose2d(4,8,kernel_size=3,stride=2,padding=1,dilation=1,output_padding=1))
 
-    torch.save(layers,"./tests/testLayers.pth")
-    torch.save(dataC1, "./tests/dataC1.pth")
-    torch.save(dataC2, "./tests/dataC2.pth")
-    torch.save(dataF, "./tests/dataF.pth")
+    #torch.save(layers,"./tests/testLayers.pth")
+    dataC1.numpy().reshape(dataC1.numpy().size).tofile("./tests/dataC1.npy")
+    dataC2.numpy().reshape(dataC2.numpy().size).tofile("./tests/dataC2.npy")
+    dataF.numpy().reshape(dataF.numpy().size).tofile("./tests/dataF.npy")
+
+    layers.eval()
 
     for name,layer in layers.named_modules():
         if name == "":
@@ -62,7 +68,8 @@ if __name__ == "__main__":
         if name == "FC":
             out = layer(dataF)
         elif name == "Cat" or name == "Short":
-            out = layer(dataC1,dataC2)
+            out = layer(dataC1,dataC1)
         else:
             out = layer(dataC1)
-        torch.save(out,"./tests/out" + name + ".pth")
+        saveParams("./tests", layer, name + ".npy")
+        out.numpy().reshape(out.numpy().size).tofile("./tests/out" + name + ".npy")
