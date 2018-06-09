@@ -6,3 +6,4 @@ data/train
 data/FineTune
 data/FineTuneHorizon
 data/LabelProp
+*.pyc
