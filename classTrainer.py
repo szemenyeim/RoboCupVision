@@ -110,7 +110,7 @@ if __name__ == "__main__":
         bar = progressbar.ProgressBar(0,len(trainloader),redirect_stdout=False)
         for i, (images, labels) in enumerate(trainloader):
             if torch.cuda.is_available():
-                images = images.cuda()
+                images = images.float().cuda()
                 labels = labels.cuda()
 
             optimizer.zero_grad()
@@ -145,7 +145,7 @@ if __name__ == "__main__":
         bar = progressbar.ProgressBar(0, len(valloader), redirect_stdout=False)
         for i, (images, labels) in enumerate(valloader):
             if torch.cuda.is_available():
-                images = images.cuda()
+                images = images.float().cuda()
                 labels = labels.cuda()
 
             pred = torch.squeeze(model(images))

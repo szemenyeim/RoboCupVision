@@ -168,9 +168,9 @@ if __name__ == "__main__":
             outputs = torch.LongTensor(currBSize, H, W)
 
             if torch.cuda.is_available():
-                images = images.cuda()
+                images = images.float().cuda()
                 labels = labels.cuda()
-                inputs = inputs.cuda()
+                inputs = inputs.float().cuda()
                 outputs = outputs.cuda()
 
 
@@ -240,9 +240,9 @@ if __name__ == "__main__":
             outputs = torch.LongTensor(currBSize, H, W)
 
             if torch.cuda.is_available():
-                images = images.cuda()
+                images = images.float().cuda()
                 labels = labels.cuda()
-                inputs = inputs.cuda()
+                inputs = inputs.float().cuda()
                 outputs = outputs.cuda()
 
             cnt = 0

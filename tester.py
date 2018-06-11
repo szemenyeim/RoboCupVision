@@ -119,7 +119,7 @@ if __name__ == "__main__":
     bar = progressbar.ProgressBar(0, len(valloader), redirect_stdout=False)
     for i, (images, labels) in enumerate(valloader):
         if useCuda:
-            images = images.cuda()
+            images = images.float().cuda()
             labels = labels.cuda()
 
         beg = time.clock()
