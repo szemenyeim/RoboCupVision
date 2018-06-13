@@ -83,13 +83,13 @@ if __name__ == "__main__":
                                              label_transform=target_transform),
                                   batch_size=batchSize, shuffle=False)
 
-    numClass = 5
+    numClass = 2
     kernelSize = 1
     numPlanes = 32
     if deep:
         model = SegFull(numClass)
     elif v2:
-        model = PB_FCN_2(False)
+        model = PB_FCN_2(False, nClass=numClass)
     elif useFCN:
         model = FCN()
     else:
@@ -121,6 +121,7 @@ if __name__ == "__main__":
         if useCuda:
             images = images.float().cuda()
             labels = labels.cuda()
+            labels[labels > 1] = 0
 
         beg = time.clock()
         pred = model(images)
@@ -133,7 +134,6 @@ if __name__ == "__main__":
         for j in range(bSize):
             img = Image.fromarray(Colorize(predClass.data[j]).permute(1, 2, 0).numpy().astype('uint8'))
             img.save(outDir + "%d.png" % (imgCnt + j))
-            print(outDir + "%d.png" % (imgCnt + j))
         imgCnt += bSize
 
 

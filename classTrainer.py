@@ -68,7 +68,7 @@ if __name__ == "__main__":
             ind = 0 if noScale else 1
             return self.classif(self.conv(x)[ind])
 
-    model = PB_FCN_2(True) if v2 else PB_FCN()
+    model = PB_FCN_2(True,nClass=numClass) if v2 else PB_FCN()
 
     weights = torch.ones(numClass)
     if torch.cuda.is_available():

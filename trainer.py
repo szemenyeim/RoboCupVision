@@ -96,19 +96,19 @@ if __name__ == "__main__":
                                   batch_size=batchSize, shuffle=True, num_workers=6)
 
 
-    numClass = 5
+    numClass = 2
     numPlanes = 32
     kernelSize = 1
     if deep:
         model = SegFull(numClass)
     elif v2:
-        model = PB_FCN_2(False)
+        model = PB_FCN_2(False,nClass=numClass)
     else:
         model = PB_FCN(numPlanes, numClass, kernelSize, noScale, 0)
 
-    weights = torch.FloatTensor([1,6,1.5,3,3])
+    weights = torch.FloatTensor([1,6])#,1.5,3,3])
     if fineTune:
-        weights = torch.FloatTensor([1,2,2,4,1.5])
+        weights = torch.FloatTensor([1,2])#,2,4,1.5])
 
     indices = []
     mapLoc = None if haveCuda else {'cuda:0': 'cpu'}
@@ -177,6 +177,7 @@ if __name__ == "__main__":
             if torch.cuda.is_available():
                 images = images.float().cuda()
                 labels = labels.cuda()
+                labels[labels > 1] = 0
 
             optimizer.zero_grad()
 
@@ -219,6 +220,7 @@ if __name__ == "__main__":
             if torch.cuda.is_available():
                 images = images.float().cuda()
                 labels = labels.cuda()
+                labels[labels > 1] = 0
 
             pred = model(images)
             loss = criterion(pred,labels)
