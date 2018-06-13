@@ -54,7 +54,7 @@ if __name__ == "__main__":
     valloader = data.DataLoader(datasets.ImageFolder("./data/Classification/val", transform=input_transform),
                                   batch_size=batchSize, shuffle=True,num_workers=6)
 
-    numClass = 5
+    numClass = 2
     numFeat = 32
     dropout = 0.1
     poolFact = 2 if noScale else 4
@@ -112,6 +112,7 @@ if __name__ == "__main__":
             if torch.cuda.is_available():
                 images = images.float().cuda()
                 labels = labels.cuda()
+                labels[labels > 1] = 0
 
             optimizer.zero_grad()
 
@@ -147,6 +148,7 @@ if __name__ == "__main__":
             if torch.cuda.is_available():
                 images = images.float().cuda()
                 labels = labels.cuda()
+                labels[labels > 1] = 0
 
             pred = torch.squeeze(model(images))
             loss = criterion(pred, labels)
