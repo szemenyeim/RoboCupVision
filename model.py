@@ -620,9 +620,9 @@ def pruneModel2(params, ratio):
             r = ratio
             if getParamSize(param) < 100:
                 r = 0
-            elif getParamSize(param) < 1000:
+            elif getParamSize(param) < 500:
                 r = ratio*0.8
-            if getParamSize(param) > 100000:
+            if getParamSize(param) > 15000:
                 r = ratio*1.05
             origShape = param.size()
             param = torch.reshape(param,(-1,))

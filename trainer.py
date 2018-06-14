@@ -108,7 +108,7 @@ if __name__ == "__main__":
 
     weights = torch.FloatTensor([1,6])#,1.5,3,3])
     if fineTune:
-        weights = torch.FloatTensor([1,2])#,2,4,1.5])
+        weights = torch.FloatTensor([1,4])#,2,4,1.5])
 
     indices = []
     mapLoc = None if haveCuda else {'cuda:0': 'cpu'}

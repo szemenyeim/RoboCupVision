@@ -99,7 +99,7 @@ if __name__ == "__main__":
     else:
         model = PB_FCN(numPlanes, numClass, kernelSize, noScale, 0)
 
-    weights = torch.FloatTensor([1,2])#,2,4,1.5])
+    weights = torch.FloatTensor([1,4])#,2,4,1.5])
 
     indices = []
     mapLoc = None if haveCuda else {'cuda:0': 'cpu'}
@@ -146,7 +146,7 @@ if __name__ == "__main__":
         if iter > 0:
             cb()
         with torch.no_grad():
-            indices = pruneModel2(model.parameters(),(iter+1)*0.08)
+            indices = pruneModel2(model.parameters(),(iter+1)*0.085)
 
         for epoch in range(limit):
 
