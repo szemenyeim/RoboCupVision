@@ -83,7 +83,7 @@ if __name__ == "__main__":
                                              label_transform=target_transform),
                                   batch_size=batchSize, shuffle=False)
 
-    numClass = 2
+    numClass = 5
     kernelSize = 1
     numPlanes = 32
     if deep:
@@ -121,7 +121,6 @@ if __name__ == "__main__":
         if useCuda:
             images = images.float().cuda()
             labels = labels.cuda()
-            labels[labels > 1] = 0
 
         beg = time.clock()
         pred = model(images)
