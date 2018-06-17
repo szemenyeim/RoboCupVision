@@ -20,7 +20,7 @@ class Scale(object):
 
 class ToYUV(object):
     def __call__(self, img):
-        return rgb2yuv(img)*255
+        return rgb2yuv(img)
         #return img.convert('YCbCr')
 
 class ToLabel(object):

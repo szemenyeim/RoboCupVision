@@ -104,7 +104,7 @@ if __name__ == "__main__":
     model.load_state_dict(stateDict)
 
     if dump:
-        saveParams("./weights" + scaleStr + v2Str, model.cpu(), "weights.dat" if pruned else "weights2.dat")
+        saveParams("./weights" + scaleStr + v2Str, model.cpu(), "weights.dat" if pruned else "weights2.dat", v2)
         if useCuda:
             model = model.cuda()
 
@@ -121,6 +121,8 @@ if __name__ == "__main__":
         if useCuda:
             images = images.float().cuda()
             labels = labels.cuda()
+        else:
+            images = images.float()
 
         beg = time.clock()
         pred = model(images)
