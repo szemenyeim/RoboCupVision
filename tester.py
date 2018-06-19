@@ -29,6 +29,8 @@ if __name__ == "__main__":
                         action="store_true")
     parser.add_argument("--v2", help="Use PB-FCNv2",
                         action="store_true")
+    parser.add_argument("--ballOnly", help="Train Binary segmenter for ball",
+                        action="store_true")
     parser.add_argument("--dump", help="Dump model parameters",
                         action="store_true")
     parser.add_argument("--useCuda", help="Test on GPU",
@@ -42,6 +44,7 @@ if __name__ == "__main__":
     noScale = args.noScale
     useFCN = args.FCN
     v2 = args.v2
+    bo = args.ballOnly
     dump = args.dump
     useCuda = torch.cuda.is_available() if args.useCuda else False
     if useFCN: noScale = False
@@ -53,6 +56,7 @@ if __name__ == "__main__":
     FCNStr = "1" if useFCN else ""
     scaleStr = "VGA" if noScale else ""
     v2Str = "v2" if v2 else ""
+    boStr = "bo" if bo else ""
     scale = 1 if noScale else 4
 
     input_transform = Compose([
@@ -83,7 +87,7 @@ if __name__ == "__main__":
                                              label_transform=target_transform),
                                   batch_size=batchSize, shuffle=False)
 
-    numClass = 5
+    numClass = 2 if bo else 5
     kernelSize = 1
     numPlanes = 32
     if deep:
@@ -100,11 +104,11 @@ if __name__ == "__main__":
         model = model.cuda()
         mapLoc = None
 
-    stateDict = torch.load("./pth/bestModelSeg" + FCNStr + scaleStr + v2Str + deepStr + fineTuneStr + pruneStr + ".pth", map_location=mapLoc)
+    stateDict = torch.load("./pth/bestModelSeg" + FCNStr + scaleStr + v2Str + boStr + deepStr + fineTuneStr + pruneStr + ".pth", map_location=mapLoc)
     model.load_state_dict(stateDict)
 
     if dump:
-        saveParams("./weights" + scaleStr + v2Str, model.cpu(), "weights.dat" if pruned else "weights2.dat", v2)
+        saveParams("./weights" + scaleStr + v2Str + boStr, model.cpu(), "weights.dat" if pruned else "weights2.dat", v2)
         if useCuda:
             model = model.cuda()
 
@@ -123,6 +127,8 @@ if __name__ == "__main__":
             labels = labels.cuda()
         else:
             images = images.float()
+        if bo:
+            labels[labels > 1] = 0
 
         beg = time.clock()
         pred = model(images)

@@ -27,6 +27,8 @@ if __name__ == "__main__":
                         action="store_true")
     parser.add_argument("--v2", help="Use PB-FCNv2",
                         action="store_true")
+    parser.add_argument("--ballOnly", help="Train Binary segmenter for ball",
+                        action="store_true")
     args = parser.parse_args()
 
     fineTune = args.finetune
@@ -34,6 +36,7 @@ if __name__ == "__main__":
     deep = args.deep
     noScale = args.noScale
     v2 = args.v2
+    bo = args.ballOnly
     haveCuda = torch.cuda.is_available()
 
     fineTuneStr = "Finetuned" if fineTune else ""
@@ -41,6 +44,7 @@ if __name__ == "__main__":
     deepStr = "Deep" if deep else ""
     scaleStr = "VGA" if noScale else ""
     v2Str = "v2" if v2 else ""
+    boStr = "bo" if bo else ""
     scale = 1 if noScale else 4
 
     labSize = (480.0/scale, 640.0/scale)
@@ -96,7 +100,7 @@ if __name__ == "__main__":
                                   batch_size=batchSize, shuffle=True, num_workers=6)
 
 
-    numClass = 5
+    numClass = 2 if bo else 5
     numPlanes = 32
     kernelSize = 1
     if deep:
@@ -116,7 +120,7 @@ if __name__ == "__main__":
         model = model.cuda()
         weights = weights.cuda()
 
-    loadModel(model,noScale,v2,deep,fineTune,pruning,mapLoc)
+    loadModel(model,noScale,v2,bo,deep,fineTune,pruning,mapLoc)
 
     if v2 and not fineTune:
         for m in model.upPart.modules():
@@ -153,7 +157,7 @@ if __name__ == "__main__":
 
     def cb():
         print("Best Model reloaded")
-        stateDict = torch.load("./pth/bestModelSeg" + scaleStr  + v2Str + deepStr + fineTuneStr + pruneStr + ".pth",
+        stateDict = torch.load("./pth/bestModelSeg" + scaleStr + v2Str + boStr + deepStr + fineTuneStr + pruneStr + ".pth",
                                map_location=mapLoc)
         model.load_state_dict(stateDict)
 
@@ -177,6 +181,8 @@ if __name__ == "__main__":
             if torch.cuda.is_available():
                 images = images.float().cuda()
                 labels = labels.cuda()
+            if bo:
+                labels[labels>1] = 0
 
             optimizer.zero_grad()
 
@@ -219,6 +225,8 @@ if __name__ == "__main__":
             if torch.cuda.is_available():
                 images = images.float().cuda()
                 labels = labels.cuda()
+            if bo:
+                labels[labels>1] = 0
 
             pred = model(images)
             loss = criterion(pred,labels)
@@ -273,7 +281,7 @@ if __name__ == "__main__":
             bestAcc = meanClassAcc
             bestTAcc = running_acc/(imgCnt)
 
-            torch.save(model.state_dict(), "./pth/bestModelSeg" + scaleStr + v2Str  + deepStr + fineTuneStr + pruneStr + ".pth")
+            torch.save(model.state_dict(), "./pth/bestModelSeg" + scaleStr + v2Str + boStr + deepStr + fineTuneStr + pruneStr + ".pth")
 
         scheduler.step(currLoss)
 

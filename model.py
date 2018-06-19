@@ -577,8 +577,8 @@ class BNNMC(nn.Module):
         return x
 
 
-def loadModel(model,noScale,v2,deep,fineTune,prune,mapLoc):
-    path = "./pth/bestModel" + ("Seg" if fineTune else "") + ("VGA" if noScale else "") + ("v2" if v2 else "") + ("Deep" if deep else "") + ("Finetuned" if prune else "") + ".pth"
+def loadModel(model,noScale,v2,bo,deep,fineTune,prune,mapLoc):
+    path = "./pth/bestModel" + ("Seg" if fineTune else "") + ("VGA" if noScale else "") + ("v2" if v2 else "") + ("bo" if bo else "") + ("Deep" if deep else "") + ("Finetuned" if prune else "") + ".pth"
     if fineTune or v2:
         stateDict = torch.load(path, map_location=mapLoc)
         model.load_state_dict(stateDict)

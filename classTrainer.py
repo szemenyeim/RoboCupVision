@@ -18,11 +18,16 @@ if __name__ == "__main__":
                         action="store_true")
     parser.add_argument("--v2", help="Use PB-FCNv2",
                         action="store_true")
+    parser.add_argument("--ballOnly", help="Train Binary segmenter for ball",
+                        action="store_true")
     args = parser.parse_args()
     noScale = args.noScale
     v2 = args.v2
+    bo = args.ballOnly
     VGAStr = "VGA" if noScale else ""
     v2Str = "v2" if v2 else ""
+    boStr = "bo" if bo else ""
+
 
     input_transform = Compose([
         ToYUV(),
@@ -54,7 +59,7 @@ if __name__ == "__main__":
     valloader = data.DataLoader(datasets.ImageFolder("./data/Classification/val", transform=input_transform),
                                   batch_size=batchSize, shuffle=True,num_workers=6)
 
-    numClass = 5
+    numClass = 2 if bo else 5
     numFeat = 32
     dropout = 0.1
     poolFact = 2 if noScale else 4
@@ -86,7 +91,7 @@ if __name__ == "__main__":
 
     def cb():
         print("Best Model reloaded")
-        stateDict = torch.load("./pth/bestModel" + VGAStr + v2Str + ".pth",
+        stateDict = torch.load("./pth/bestModel" + VGAStr + v2Str + boStr + ".pth",
                                map_location=mapLoc)
         model.load_state_dict(stateDict)
 
@@ -112,6 +117,8 @@ if __name__ == "__main__":
             if torch.cuda.is_available():
                 images = images.float().cuda()
                 labels = labels.cuda()
+            if bo:
+                labels[labels>1] = 0
 
             optimizer.zero_grad()
 
@@ -171,12 +178,12 @@ if __name__ == "__main__":
             bestLoss = running_loss/(i+1)
             bestAcc = running_acc/(imgCnt)
             print(conf)
-            torch.save(model.state_dict(), "./pth/bestModel" + VGAStr + v2Str + ".pth")
+            torch.save(model.state_dict(), "./pth/bestModel" + VGAStr + v2Str + boStr + ".pth")
 
         scheduler.step(running_loss/(i+1))
 
     if not v2:
         cb()
-        torch.save(model.conv.state_dict(), "./pth/bestModel" + VGAStr + v2Str + ".pth")
+        torch.save(model.conv.state_dict(), "./pth/bestModel" + VGAStr + v2Str + boStr + ".pth")
     print("Finished: Best Validation Loss: %.4f Best Validation Acc: %.2f"  % (bestLoss, bestAcc))
 
