@@ -146,7 +146,7 @@ if __name__ == "__main__":
         if iter > 0:
             cb()
         with torch.no_grad():
-            indices = pruneModel2(model.parameters(),(iter+1)*0.085)
+            indices = pruneModel2(model.parameters(),(iter+1)*0.08)
 
         for epoch in range(limit):
 
