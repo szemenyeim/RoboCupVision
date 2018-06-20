@@ -135,8 +135,8 @@ if __name__ == "__main__":
     if fineTune:
         weights = torch.FloatTensor([1,4,2,4,1.5])
     classIndices = torch.LongTensor([1, (not nb), (not nr), (not ng), (not nl)])
-    weights = weights[classIndices]
-
+    weights = weights[classIndices==1]
+    
     indices = []
     mapLoc = None if haveCuda else {'cuda:0': 'cpu'}
     if haveCuda:
