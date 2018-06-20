@@ -1,1 +1,3 @@
 *.pyc
+/lr_scheduler.cpython-36.pyc
+/visualize.cpython-36.pyc
