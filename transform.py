@@ -24,14 +24,28 @@ class ToYUV(object):
         #return img.convert('YCbCr')
 
 def maskLabel(label,nb,nr,ng,nl):
+    bNum = 1
+    rNum = 2
+    gNum = 3
+    lNum = 4
     if nb:
-        label[label==1] = 0
+        label[label==bNum] = 0
+        label[label>bNum] -= 1
+        rNum = 1
+        gNum = 2
+        lNum = 3
     if nr:
-        label[label==2] = 0
+        label[label==rNum] = 0
+        label[label>rNum] -= 1
+        gNum = 1
+        lNum = 2
     if ng:
-        label[label==3] = 0
+        label[label==gNum] = 0
+        label[label>gNum] -= 1
+        lNum = 1
     if nl:
-        label[label==4] = 0
+        label[label==lNum] = 0
+
     return label
 
 class ToLabel(object):
