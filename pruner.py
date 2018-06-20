@@ -28,6 +28,10 @@ if __name__ == "__main__":
                         action="store_true")
     parser.add_argument("--noLine", help="Treat Lines as Background",
                         action="store_true")
+    parser.add_argument("--topCam", help="Use Top Camera images only",
+                        action="store_true")
+    parser.add_argument("--bottomCam", help="Use Bottom Camera images only",
+                        action="store_true")
     args = parser.parse_args()
 
     noScale = args.noScale
@@ -36,6 +40,8 @@ if __name__ == "__main__":
     ng = args.noGoal
     nr = args.noRobot
     nl = args.noLine
+    tc = args.topCam
+    bc = args.bottomCam
     haveCuda = torch.cuda.is_available()
 
     fineTuneStr = "Finetuned"
@@ -46,6 +52,7 @@ if __name__ == "__main__":
     ngStr = "NoGoal" if ng else ""
     nrStr = "NoRobot" if nr else ""
     nlStr = "NoLine" if nl else ""
+    cameraString = "both" if tc == bc else( "top" if tc else "bottom")
     scale = 1 if noScale else 4
 
     if nb and ng and nr and nl:
@@ -96,11 +103,11 @@ if __name__ == "__main__":
 
     root = "./data/FinetuneHorizon"
 
-    trainloader = data.DataLoader(SSDataSet(root, split="train", img_transform=input_transform_tr,
+    trainloader = data.DataLoader(SSDataSet(root, split="train", camera=cameraString, img_transform=input_transform_tr,
                                              label_transform=target_transform_tr),
                                   batch_size=batchSize, shuffle=True, num_workers=6)
 
-    valloader = data.DataLoader(SSDataSet(root, split="val", img_transform=input_transform,
+    valloader = data.DataLoader(SSDataSet(root, split="val", camera=cameraString, img_transform=input_transform,
                                              label_transform=target_transform),
                                   batch_size=batchSize, shuffle=True, num_workers=6)
 
@@ -124,7 +131,7 @@ if __name__ == "__main__":
         weights = weights.cuda()
 
 
-    path = "./pth/bestModel" + "Seg" + scaleStr + v2Str + nbStr + ngStr + nrStr + nlStr + "Finetuned.pth"
+    path = "./pth/bestModel" + "Seg" + scaleStr + v2Str + nbStr + ngStr + nrStr + nlStr + cameraString + "Finetuned.pth"
     stateDict = torch.load(path, map_location=mapLoc)
     model.load_state_dict(stateDict)
 
@@ -142,7 +149,7 @@ if __name__ == "__main__":
 
     def cb():
         print("Best Model reloaded")
-        stateDict = torch.load("./pth/bestModelSeg" + scaleStr  + v2Str + nbStr + ngStr + nrStr + nlStr + fineTuneStr + pruneStr + ".pth",
+        stateDict = torch.load("./pth/bestModelSeg" + scaleStr  + v2Str + nbStr + ngStr + nrStr + nlStr + cameraString + fineTuneStr + pruneStr + ".pth",
                                map_location=mapLoc)
         model.load_state_dict(stateDict)
 
@@ -281,7 +288,7 @@ if __name__ == "__main__":
                 bestAcc = meanClassAcc
                 bestTAcc = running_acc/(imgCnt)
 
-                torch.save(model.state_dict(), "./pth/bestModelSeg" + scaleStr + v2Str + nbStr + ngStr + nrStr + nlStr + fineTuneStr + pruneStr + ".pth")
+                torch.save(model.state_dict(), "./pth/bestModelSeg" + scaleStr + v2Str + nbStr + ngStr + nrStr + nlStr + cameraString + fineTuneStr + pruneStr + ".pth")
 
     print("Optimization finished Validation Loss: %.4f Pixel Acc: %.2f Mean Class Acc: %.2f IoU: %.2f" % (bestLoss, bestTAcc, bestAcc, bestIoU))
     print(bestConf)

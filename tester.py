@@ -35,6 +35,10 @@ if __name__ == "__main__":
                         action="store_true")
     parser.add_argument("--noLine", help="Treat Lines as Background",
                         action="store_true")
+    parser.add_argument("--topCam", help="Use Top Camera images only",
+                        action="store_true")
+    parser.add_argument("--bottomCam", help="Use Bottom Camera images only",
+                        action="store_true")
     parser.add_argument("--dump", help="Dump model parameters",
                         action="store_true")
     parser.add_argument("--useCuda", help="Test on GPU",
@@ -51,6 +55,8 @@ if __name__ == "__main__":
     ng = args.noGoal
     nr = args.noRobot
     nl = args.noLine
+    tc = args.topCam
+    bc = args.bottomCam
     dump = args.dump
     useCuda = torch.cuda.is_available() if args.useCuda else False
     if useFCN: noScale = False
@@ -65,6 +71,8 @@ if __name__ == "__main__":
     ngStr = "NoGoal" if ng else ""
     nrStr = "NoRobot" if nr else ""
     nlStr = "NoLine" if nl else ""
+    cameraString = "both" if tc == bc else( "top" if tc else "bottom")
+    cameraLoadStr = cameraString if fineTune else ""
     scale = 1 if noScale else 4
 
     if nb and ng and nr and nl:
@@ -95,7 +103,7 @@ if __name__ == "__main__":
         outDir = "./output/FinetuneHorizon/"
         root = "./data/FinetuneHorizon"
 
-    valloader = data.DataLoader(SSDataSet(root, split="val", img_transform=input_transform,
+    valloader = data.DataLoader(SSDataSet(root, split="val", camera=cameraString, img_transform=input_transform,
                                              label_transform=target_transform),
                                   batch_size=batchSize, shuffle=False)
 
@@ -114,11 +122,11 @@ if __name__ == "__main__":
         model = model.cuda()
         mapLoc = None
 
-    stateDict = torch.load("./pth/bestModelSeg" + FCNStr + scaleStr + v2Str + nbStr + ngStr + nrStr + nlStr + fineTuneStr + pruneStr + ".pth", map_location=mapLoc)
+    stateDict = torch.load("./pth/bestModelSeg" + FCNStr + scaleStr + v2Str + nbStr + ngStr + nrStr + nlStr + cameraLoadStr + fineTuneStr + pruneStr + ".pth", map_location=mapLoc)
     model.load_state_dict(stateDict)
 
     if dump:
-        saveParams("./weights/" + scaleStr + v2Str + nbStr + ngStr + nrStr + nlStr, model.cpu(), "weights.dat" if pruned else "weights2.dat", v2)
+        saveParams("./weights/" + scaleStr + v2Str + nbStr + ngStr + nrStr + nlStr + cameraLoadStr, model.cpu(), "weights.dat" if pruned else "weights2.dat", v2)
         if useCuda:
             model = model.cuda()
 
