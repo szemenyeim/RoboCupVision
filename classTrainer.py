@@ -80,7 +80,7 @@ if __name__ == "__main__":
     dropout = 0.1
 
 
-    model = PB_FCN_2(True,nClass=numClass) if v2 else PB_FCN(numFeat,numClass,1,noScale,0)
+    model = PB_FCN_2(True,nClass=numClass) if v2 else PB_FCN(numFeat,numClass,1,noScale,True)
 
     weights = torch.ones(numClass)
     if torch.cuda.is_available():
