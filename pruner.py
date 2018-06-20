@@ -84,7 +84,7 @@ if __name__ == "__main__":
 
     root = "./data/FinetuneHorizon"
 
-    camera = "bottom" if bo else "both"
+    camera = "bottom" if bo else "top"
 
     trainloader = data.DataLoader(SSDataSet(root, split="train", camera=camera, img_transform=input_transform_tr,
                                              label_transform=target_transform_tr),
