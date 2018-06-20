@@ -246,19 +246,19 @@ if __name__ == "__main__":
                 imgCnt += bSize
 
                 maskPred = torch.zeros(numClass,bSize,int(labSize[0]), int(labSize[1])).long()
-                maskLabel = torch.zeros(numClass,bSize,int(labSize[0]), int(labSize[1])).long()
+                maskTarget = torch.zeros(numClass,bSize,int(labSize[0]), int(labSize[1])).long()
                 for currClass in range(numClass):
                     maskPred[currClass] = predClass == currClass
-                    maskLabel[currClass] = labels == currClass
+                    maskTarget[currClass] = labels == currClass
 
                 for imgInd in range(bSize):
                     for labIdx in range(numClass):
-                        labCnts[labIdx] += torch.sum(maskLabel[labIdx,imgInd]).item()
+                        labCnts[labIdx] += torch.sum(maskTarget[labIdx,imgInd]).item()
                         for predIdx in range(numClass):
-                            inter = torch.sum(maskPred[predIdx,imgInd] & maskLabel[labIdx,imgInd]).item()
+                            inter = torch.sum(maskPred[predIdx,imgInd] & maskTarget[labIdx,imgInd]).item()
                             conf[(predIdx, labIdx)] += inter
                             if labIdx == predIdx:
-                                union = torch.sum(maskPred[predIdx,imgInd] | maskLabel[labIdx,imgInd]).item()
+                                union = torch.sum(maskPred[predIdx,imgInd] | maskTarget[labIdx,imgInd]).item()
                                 if union == 0:
                                     IoU[labIdx] += 1
                                 else:
