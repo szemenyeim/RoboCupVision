@@ -49,12 +49,18 @@ class SSDataSet(data.Dataset):
         txtFiles = sorted(glob.glob1(self.img_dir, "*.txt"),key=alphanum_key)
         labFiles = sorted(glob.glob1(self.lab_dir, "*.png"),key=alphanum_key)
 
-        for img,lab,txt in zip(imgFiles,labFiles,txtFiles):
-            char = open(osp.join( self.img_dir, txt )).read()
-            condition = (camera== "both") or ((camera == "top") and (char == "u")) or ((camera == "bottom") and (char == "b"))
-            if condition:
+        if len(txtFiles) == len(imgFiles):
+            for img,lab,txt in zip(imgFiles,labFiles,txtFiles):
+                char = open(osp.join( self.img_dir, txt )).read()
+                condition = (camera== "both") or ((camera == "top") and (char == "u")) or ((camera == "bottom") and (char == "b"))
+                if condition:
+                    self.images.append(img)
+                    self.labels.append(lab)
+        else:
+            for img,lab in zip(imgFiles,labFiles):
                 self.images.append(img)
                 self.labels.append(lab)
+
 
     def __len__(self):
         return len(self.images)
