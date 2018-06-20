@@ -252,7 +252,7 @@ if __name__ == "__main__":
             if torch.cuda.is_available():
                 images = images.float().cuda()
                 labels = labels.cuda()
-            maskLabel(labels, nb, nr, ng, nl)
+            labels = maskLabel(labels, nb, nr, ng, nl)
 
             pred = model(images)
             loss = criterion(pred,labels)
