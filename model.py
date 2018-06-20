@@ -612,7 +612,7 @@ def pruneModel(params, lower = 73, upper = 77):
 
     return indices
 
-def pruneModel2(params, ratio):
+def pruneModel2(params, ratio, hT, lT):
 
     indices = []
     for param in params:
@@ -620,9 +620,9 @@ def pruneModel2(params, ratio):
             r = ratio
             if getParamSize(param) < 100:
                 r = 0
-            elif getParamSize(param) < 500:
+            elif getParamSize(param) < lT:
                 r = ratio*0.8
-            if getParamSize(param) > 15000:
+            if getParamSize(param) > hT:
                 r = ratio*1.05
             origShape = param.size()
             param = torch.reshape(param,(-1,))

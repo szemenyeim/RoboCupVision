@@ -103,8 +103,9 @@ if __name__ == "__main__":
     else:
         model = PB_FCN(numPlanes, numClass, kernelSize, noScale, 0)
 
-    weights = torch.FloatTensor([1,2,2,4,1.5])
-
+    weights = torch.FloatTensor([1,4,2,4,1.5])
+    if bo:
+        weights = weights[0:2]
     indices = []
     mapLoc = None if haveCuda else {'cuda:0': 'cpu'}
     if haveCuda:
@@ -146,11 +147,15 @@ if __name__ == "__main__":
         bestIoU = 0
         bestTAcc = 0
         bestConf = torch.zeros(numClass, numClass)
+        
+        pruneAm = 0.085 if bo else 0.08
+        pruneThreshLow = 500 if v2 else 1000
+        pruneThreshHigh = 15000 if v2 else 50000
 
         if iter > 0:
             cb()
         with torch.no_grad():
-            indices = pruneModel2(model.parameters(),(iter+1)*0.08)
+            indices = pruneModel2(model.parameters(),(iter+1)*pruneAm,pruneThreshLow,pruneThreshHigh)
 
         for epoch in range(limit):
 

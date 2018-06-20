@@ -154,6 +154,8 @@ if __name__ == "__main__":
             if torch.cuda.is_available():
                 images = images.float().cuda()
                 labels = labels.cuda()
+            if bo:
+                labels[labels>1] = 0
 
             pred = torch.squeeze(model(images))
             loss = criterion(pred, labels)
