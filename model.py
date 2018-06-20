@@ -10,30 +10,6 @@ def getParamSize(x):
         len *= s
     return len
 
-def bb_intersection_over_union(boxA, boxB):
-    # determine the (x, y)-coordinates of the intersection rectangle
-    xA = max(boxA[0], boxB[0])
-    yA = max(boxA[1], boxB[1])
-    xB = min(boxA[0]+boxA[2], boxB[0]+boxB[2])
-    yB = min(boxA[1]+boxA[3], boxB[1]+boxB[3])
-
-    # compute the area of intersection rectangle
-    side1 = (xB - xA + 1)
-    side2 = (yB - yA + 1)
-    interArea = 0.0 if side1 <= 0.0 or side2 <= 0.0 else side1*side2
-
-    # compute the area of both the prediction and ground-truth
-    # rectangles
-    boxAArea = boxA[2]*boxA[3]
-    boxBArea = boxB[2]*boxB[3]
-
-    # compute the intersection over union by taking the intersection
-    # area and dividing it by the sum of prediction + ground-truth
-    # areas - the interesection area
-    iou = interArea / (boxAArea + boxBArea + 1e-5)
-    # return the intersection over union value
-    return iou
-
 # Pixelwise Cross-entropy loss
 class CrossEntropyLoss2d(nn.Module):
     def __init__(self, weight=None, size_average=True):
@@ -42,6 +18,14 @@ class CrossEntropyLoss2d(nn.Module):
 
     def forward(self, inputs, targets):
         return self.nll_loss(F.log_softmax(inputs,dim=1), targets)
+
+class View(nn.Module):
+    def __init__(self, numFeat):
+        super(View, self).__init__()
+        self.numFeat = numFeat
+
+    def forward(self, x):
+        return x.view(-1,self.numFeat)
 
 class Conv(nn.Module):
     def __init__(self, inplanes, planes, size, stride=1):
@@ -52,154 +36,56 @@ class Conv(nn.Module):
     def forward(self, x):
         return self.bn(F.relu(self.conv(x)))
 
-class View(nn.Module):
-    def __init__(self, numFeat):
-        super(View, self).__init__()
-        self.numFeat = numFeat
-
-    def forward(self, x):
-        return x.view(-1,self.numFeat)
-
-class ErrorMeasures():
-    def __init__(self,classify, tMeans, tStd, numClass = 5, numBall = 1, numGoal = 2, numRobot = 5):
-        self.numClass = numClass
-        self.numBBs = numGoal+numBall+numRobot
-        self.numGoal = numGoal
-        self.numBall = numBall
-        self.numRobot = numRobot
-        self.classify = classify
-        self.tMeans = tMeans
-        self.tStd = tStd
-
-    def forward(self,pred,traget):
-        inputLen = pred.size(1)
-        classScores = pred if self.classify else pred[:, 0:inputLen:5]
-        classTargets = traget if self.classify else (traget[:, 0:inputLen:5] > 0.0)
-
-        _, predClass = torch.max(classScores, 1) if self.classify else (1,(classScores > 0.0))
-        correct = torch.sum( predClass == classTargets ).item()/self.numBBs
-
-        confusion = torch.zeros([self.numClass,self.numClass]).long() if self.classify else torch.zeros([4,3]).long()
-
-        if self.classify:
-            for j in range(pred.size(0)):
-                confusion[(predClass[j],classTargets[j])] += 1
-        else:
-            for i in range(predClass.size(0)):
-                for j in range(predClass.size(1)):
-                    positive = classTargets[i,j].item()
-                    predicted = predClass[i,j].item()
-                    rowInd = positive + (0 if positive==predicted else 2)
-                    colInd = 0 if j < self.numBall else 1 if j < self.numBall + self.numRobot else 2
-                    confusion[(rowInd,colInd)] += 1
-
-        IoU = 0.0
-        cnt = 0
-        if not self.classify:
-            traget = traget*self.tStd + self.tMeans
-            pred = pred*self.tStd + self.tMeans
-            for i in range(pred.size(0)):
-                for j in range(0,pred.size(1),5):
-                    if traget[i,j] > 0.0 and pred[i,j] > 0.0:
-                        IoU = IoU + bb_intersection_over_union(traget[i,j+1:j+5],pred[i,j+1:j+5])
-                        cnt += 1
-
-        return correct, confusion, IoU, cnt
-
-
-class ROBOLoss(nn.Module):
-    def __init__(self, BBLossWeight=0.1):
-        super(ROBOLoss, self).__init__()
-        self.BBLossWeight = BBLossWeight
-        self.ClassLossFun = nn.MSELoss()
-        self.BBLossFun = nn.MSELoss(size_average=False, reduce=False)
-
-    def forward(self, inputs, targets):
-        inputLen = inputs.size(1)
-        classScores = inputs[:, 0:inputLen:5]
-        classTargets = (targets[:, 0:inputLen:5] > 0.0).float()
-
-        classLoss = self.ClassLossFun(F.sigmoid(classScores), classTargets)
-
-        BBLoss = 0
-
-        for cntr,i in enumerate(range(0, inputLen, 5)):
-            losses = self.BBLossFun(inputs[:, i + 1:i + 5], targets[:, i + 1:i + 5]).sum(dim=1)/4
-            BBLoss = BBLoss + torch.dot(classTargets[:, cntr], losses) / (torch.sum(classTargets[:, cntr])+ 1e-5)
-
-        loss = classLoss + self.BBLossWeight * BBLoss
-
-        return loss
-
-
-class ROBO(nn.Module):
-    def __init__(self, numFeat = 8, depth = 7, levels = 1, classify = False, numClass = 5, numBall = 1, numRobot = 5, numGoal = 2):
-        super(ROBO,self).__init__()
-        self.numFeat = numFeat
-        self.maxDepth = numFeat*int(pow(2,depth-1))
-        self.depth = depth
-        self.levels = levels
-        self.classify = classify
-        self.numClass = numClass
-        self.outNum = numRobot+numBall+numGoal
-        PixNum = 160*120
-
-        self.computation = []
-
-        self.feature = nn.Sequential()
-
-        for i in range(depth):
-
-            oDepth = numFeat * int(pow(2,i))
-
-            for j in range(levels):
-
-                iDepth = oDepth if j > 0 else oDepth//2 if i > 0 else 3
-
-                self.feature.add_module(("Conv%d%d"%(i,j)),Conv(iDepth,oDepth,3))
-                self.computation.append(iDepth*oDepth*9*PixNum)
-
-            self.feature.add_module(("Pool%d"%i),Conv(oDepth,oDepth,3,2))
-            PixNum = PixNum//4
-            self.computation.append(oDepth*oDepth*9*PixNum)
-
-        self.classifier = nn.Sequential()
-        self.classifier.add_module("Pool",nn.AdaptiveMaxPool2d(1))
-        self.classifier.add_module("View",View(self.maxDepth))
-        self.classifier.add_module("Dropout",nn.Dropout(0.5))
-        self.classifier.add_module("Class",nn.Linear(self.maxDepth,numClass))
-
-        self.ROBOOut = nn.Sequential()
-        self.ROBOOut.add_module("Pool",nn.AdaptiveMaxPool2d(1))
-        self.ROBOOut.add_module("View",View(self.maxDepth))
-        self.ROBOOut.add_module("Dropout",nn.Dropout(0.5))
-        self.computation.append(self.maxDepth*self.maxDepth*self.outNum*5)
-        self.ROBOOut.add_module("ROBO",nn.Linear(self.maxDepth,self.outNum*5))
-
-
-    def forward(self,x):
-
-        x = self.feature(x)
-
-        x = self.classifier(x) if self.classify else self.ROBOOut(x)
-
-        return x
-
-
-class DUC(nn.Module):
-    def __init__(self, inplanes, planes, upscale_factor=2):
-        super(DUC, self).__init__()
+class ConvPool(nn.Module):
+    def __init__(self, inplanes, planes):
+        super(ConvPool, self).__init__()
         self.relu = nn.ReLU()
-        self.conv = nn.Conv2d(inplanes, planes, kernel_size=3,
-                              padding=1, bias=True)
+        self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=3, dilation=2,
+                               padding=2, bias=False)
+        self.pool = nn.Conv2d(planes, planes, kernel_size=3,
+                              padding=1, stride=2, bias=False)
         self.bn = nn.BatchNorm2d(planes)
-        self.pixel_shuffle = nn.PixelShuffle(upscale_factor)
 
     def forward(self, x):
-        x = self.conv(x)
+        x = self.conv1(x)
+        x = self.relu(x)
+        x = self.pool(x)
         x = self.bn(x)
         x = self.relu(x)
-        x = self.pixel_shuffle(x)
+        return x
+
+class ConvPoolDouble(nn.Module):
+    def __init__(self, inplanes, planes):
+        super(ConvPoolDouble, self).__init__()
+        self.relu = nn.ReLU()
+        self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=3, dilation=2,
+                               padding=2, bias=False)
+        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, dilation=2,
+                               padding=2, bias=False)
+        self.pool = nn.Conv2d(planes, planes, kernel_size=3,
+                              padding=1, stride=2, bias=False)
+        self.bn = nn.BatchNorm2d(planes)
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.relu(x)
+        x = self.conv2(x)
+        x = self.relu(x)
+        x = self.pool(x)
+        x = self.bn(x)
+        x = self.relu(x)
+        return x
+
+class ConvPoolSimple(nn.Module):
+    def __init__(self, inplanes, planes, size, stride, padding, dilation, bias):
+        super(ConvPoolSimple, self).__init__()
+
+        self.conv = nn.Conv2d(inplanes, planes, size, stride=stride, padding=padding, dilation=dilation, bias=bias)
+        self.bn = nn.BatchNorm2d(planes)
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        x = self.relu(self.bn(self.conv(x)))
         return x
 
 class upSampleTransposeConv(nn.Module):
@@ -216,63 +102,54 @@ class upSampleTransposeConv(nn.Module):
         x = self.relu(x)
         return x
 
-class ConvPool(nn.Module):
-    def __init__(self, inplanes, planes, dropout):
-        super(ConvPool, self).__init__()
-        self.relu = nn.ReLU()
-        self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=3, dilation=2,
-                              padding=2, bias=False)
-        self.pool = nn.Conv2d(planes, planes, kernel_size=3,
-                              padding=1, stride=2, bias=False)
-        self.bn = nn.BatchNorm2d(planes)
-        self.do = nn.Dropout2d(dropout)
+class DownSampler(nn.Module):
+    def __init__(self,planes, noScale):
+        super(DownSampler, self).__init__()
+        self.noScale = noScale
+        outPlanes = planes//4
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = self.pool(x)
-        x = self.bn(x)
-        x = self.relu(x)
-        x = self.do(x)
-        return x
-
-class ConvPoolDouble(nn.Module):
-    def __init__(self, inplanes, planes, dropout):
-        super(ConvPoolDouble, self).__init__()
-        self.relu = nn.ReLU()
-        self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=3, dilation=2,
-                              padding=2, bias=False)
-        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, dilation=2,
-                              padding=2, bias=False)
-        self.pool = nn.Conv2d(planes, planes, kernel_size=3,
-                              padding=1, stride=2, bias=False)
-        self.bn = nn.BatchNorm2d(planes)
-        self.do = nn.Dropout2d(dropout)
-
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = self.conv2(x)
-        x = self.relu(x)
-        x = self.pool(x)
-        x = self.bn(x)
-        x = self.relu(x)
-        x = self.do(x)
-        return x
-
-class ConvPoolSimple(nn.Module):
-    def __init__(self,inplanes,planes,size,stride,padding,dilation,bias, dropout):
-        super(ConvPoolSimple,self).__init__()
-
-        self.conv = nn.Conv2d(inplanes,planes,size,stride=stride,padding=padding,dilation=dilation,bias=bias)
-        self.bn = nn.BatchNorm2d(planes)
-        self.relu = nn.ReLU()
-        self.do = nn.Dropout2d(dropout)
+        self.conv0 = ConvPoolSimple(3,outPlanes,3,1,2,2,False)
+        self.conv1 = ConvPoolSimple(outPlanes,planes//2,3,2,1,1,False)
+        self.conv2 = ConvPool(planes//2,planes)
+        self.conv_ext = ConvPool(planes,planes) if noScale else None
+        self.conv3 = ConvPool(planes,planes*2)
+        self.conv4 = ConvPoolSimple(planes*2,planes*4,3,1,2,2,False)
+        self.conv5 = ConvPoolSimple(planes*4,planes*4,3,1,2,2,False)
+        self.conv6 = ConvPoolSimple(planes*4,planes*4,3,1,2,2,False)
+        self.conv7 = ConvPoolSimple(planes*4,planes*4,3,1,2,2,False)
+        self.conv8 = ConvPoolSimple(planes*4,planes*2,3,1,2,2,False)
 
     def forward(self,x):
-        x = self.relu(self.bn(self.conv(x)))
-        x = self.do(x)
-        return x
+
+        x0 = self.conv0(x)
+        x1 = self.conv1(x0)
+        x2 = self.conv2(x1)
+        x3 = self.conv_ext(x2) if self.noScale else self.conv8(self.conv7(self.conv6(self.conv5(self.conv4(self.conv3(x2))))))
+        x4 = self.conv8(self.conv7(self.conv6(self.conv5(self.conv4(self.conv3(x3)))))) if self.noScale else None
+
+        return x4, x3, x2, x1, x0
+
+
+class DownSamplerThick(nn.Module):
+    def __init__(self, planes, dropout):
+        super(DownSamplerThick, self).__init__()
+        outPlanes = planes / 2
+
+        self.conv0 = ConvPoolSimple(3, outPlanes, 3, 1, 2, 2, False, dropout)
+        self.conv0_1 = ConvPoolSimple(outPlanes, outPlanes, 3, 1, 2, 2, False, dropout)
+        self.conv1 = ConvPoolSimple(outPlanes, outPlanes, 3, 2, 1, 1, False, dropout)
+        self.conv2 = ConvPoolDouble(outPlanes, planes, dropout)
+        self.conv3 = ConvPoolDouble(planes, planes * 2, dropout)
+        self.conv4 = ConvPoolSimple(planes * 2, planes * 4, 3, 1, 2, 2, False, dropout * 2)
+        self.conv5 = ConvPoolSimple(planes * 4, planes * 2, 3, 1, 2, 2, False, dropout * 2)
+
+    def forward(self, x):
+        x0 = self.conv0_1(self.conv0(x))
+        x1 = self.conv1(x0)
+        x2 = self.conv2(x1)
+        x3 = self.conv5(self.conv4(self.conv3(x2)))
+
+        return x3, x2, x1, x0
 
 class Classifier(nn.Module):
     def __init__(self,inplanes,num_classes,poolSize=0,kernelSize=1):
@@ -288,15 +165,16 @@ class Classifier(nn.Module):
         return self.classifier(x)
 
 class PB_FCN(nn.Module):
-    def __init__(self,planes, num_classes,kernelSize, noScale, dropout):
+    def __init__(self,planes, num_classes,kernelSize, noScale, classify):
         super(PB_FCN, self).__init__()
 
         self.noScale = noScale
+        self.classify = classify
 
         muliplier = 2 if noScale else 1
         outPlanes = planes//4
 
-        self.FCN = DownSampler(planes, noScale,dropout)
+        self.FCN = DownSampler(planes, noScale)
 
         self.up1 = upSampleTransposeConv(planes*2,planes)
         self.up2 = upSampleTransposeConv(planes,planes//2*muliplier)
@@ -304,11 +182,17 @@ class PB_FCN(nn.Module):
         self.up4 = upSampleTransposeConv(planes//2,outPlanes) if noScale else None
 
 
-        self.classifier = Classifier(outPlanes,num_classes,kernelSize=kernelSize)
+        self.classifier = Classifier(planes*2,num_classes,poolSize=(2 if noScale else 4),kernelSize=kernelSize)
+        self.segmenter = Classifier(outPlanes,num_classes,kernelSize=kernelSize)
 
     def forward(self,x):
 
         f4, f3, f2, f1, f0 = self.FCN(x)
+        if self.classify:
+            if self.noScale:
+                return self.classifier(f4)
+            else:
+                return self.classifier(f3)
         if self.noScale:
             x = self.up1(f4) + f3
             x = self.up2(x) + f2
@@ -319,7 +203,7 @@ class PB_FCN(nn.Module):
             x = self.up2(x) + f1
             x = self.up3(x) + f0
 
-        return self.classifier(x)
+        return self.segmenter(x)
 
 class FCN(nn.Module):
     def __init__(self):
@@ -341,34 +225,6 @@ class FCN(nn.Module):
         x = self.up2(x) + f1
         x = self.up3(x) + f0
         return self.classifier(x)
-
-
-class DownSampler(nn.Module):
-    def __init__(self,planes, noScale, dropout):
-        super(DownSampler, self).__init__()
-        self.noScale = noScale
-        outPlanes = planes//4
-
-        self.conv0 = ConvPoolSimple(3,outPlanes,3,1,2,2,False,dropout)
-        self.conv1 = ConvPoolSimple(outPlanes,planes//2,3,2,1,1,False,dropout)
-        self.conv2 = ConvPool(planes//2,planes,dropout)
-        self.conv_ext = ConvPool(planes,planes,dropout) if noScale else None
-        self.conv3 = ConvPool(planes,planes*2,dropout)
-        self.conv4 = ConvPoolSimple(planes*2,planes*4,3,1,2,2,False,dropout*2)
-        self.conv5 = ConvPoolSimple(planes*4,planes*4,3,1,2,2,False,dropout*2)
-        self.conv6 = ConvPoolSimple(planes*4,planes*4,3,1,2,2,False,dropout*2)
-        self.conv7 = ConvPoolSimple(planes*4,planes*4,3,1,2,2,False,dropout*2)
-        self.conv8 = ConvPoolSimple(planes*4,planes*2,3,1,2,2,False,dropout*2)
-
-    def forward(self,x):
-
-        x0 = self.conv0(x)
-        x1 = self.conv1(x0)
-        x2 = self.conv2(x1)
-        x3 = self.conv_ext(x2) if self.noScale else self.conv8(self.conv7(self.conv6(self.conv5(self.conv4(self.conv3(x2))))))
-        x4 = self.conv8(self.conv7(self.conv6(self.conv5(self.conv4(self.conv3(x3)))))) if self.noScale else None
-
-        return x4, x3, x2, x1, x0
 
 
 class ConvSep(nn.Module):
@@ -472,27 +328,6 @@ class PB_FCN_2(nn.Module):
 
         return self.segmenter(up)
 
-class DownSamplerThick(nn.Module):
-    def __init__(self, planes, dropout):
-        super(DownSamplerThick, self).__init__()
-        outPlanes = planes / 2
-
-        self.conv0 = ConvPoolSimple(3, outPlanes, 3, 1, 2, 2, False, dropout)
-        self.conv0_1 = ConvPoolSimple(outPlanes, outPlanes, 3, 1, 2, 2, False, dropout)
-        self.conv1 = ConvPoolSimple(outPlanes, outPlanes, 3, 2, 1, 1, False, dropout)
-        self.conv2 = ConvPoolDouble(outPlanes, planes, dropout)
-        self.conv3 = ConvPoolDouble(planes, planes * 2, dropout)
-        self.conv4 = ConvPoolSimple(planes * 2, planes * 4, 3, 1, 2, 2, False, dropout * 2)
-        self.conv5 = ConvPoolSimple(planes * 4, planes * 2, 3, 1, 2, 2, False, dropout * 2)
-
-    def forward(self, x):
-        x0 = self.conv0_1(self.conv0(x))
-        x1 = self.conv1(x0)
-        x2 = self.conv2(x1)
-        x3 = self.conv5(self.conv4(self.conv3(x2)))
-
-        return x3, x2, x1, x0
-
 class LabelProp(nn.Module):
     def __init__(self,numClass, numPlanes,dropout):
         super(LabelProp,self).__init__()
@@ -575,19 +410,6 @@ class BNNMC(nn.Module):
         x = self.relu(self.pool3(self.do3(self.conv3(x))))
         x = self.classifier(x)
         return x
-
-
-def loadModel(model,noScale,v2,bo,deep,fineTune,prune,mapLoc):
-    path = "./pth/bestModel" + ("Seg" if fineTune else "") + ("VGA" if noScale else "") + ("v2" if v2 else "") + ("bo" if bo else "") + ("Deep" if deep else "") + ("Finetuned" if prune else "") + ".pth"
-    if fineTune or v2:
-        stateDict = torch.load(path, map_location=mapLoc)
-        model.load_state_dict(stateDict)
-    else:
-        if deep:
-            return
-        else:
-            stateDict = torch.load(path, map_location=mapLoc)
-            model.FCN.load_state_dict(stateDict)
 
 def pruneModel(params, lower = 73, upper = 77):
     i = 0

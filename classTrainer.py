@@ -1,11 +1,11 @@
 import torch
 import torch.nn as nn
 from torch.utils import data
-from model import DownSampler, Classifier, PB_FCN_2
+from model import PB_FCN, PB_FCN_2
 import lr_scheduler
 from visualize import LinePlotter
 from torchvision.transforms import Compose, Normalize, ToTensor, RandomHorizontalFlip, ColorJitter
-from transform import ToYUV
+from transform import ToYUV, maskLabel
 import torchvision.datasets as datasets
 import progressbar
 import numpy as np
@@ -18,15 +18,31 @@ if __name__ == "__main__":
                         action="store_true")
     parser.add_argument("--v2", help="Use PB-FCNv2",
                         action="store_true")
-    parser.add_argument("--ballOnly", help="Train Binary segmenter for ball",
+    parser.add_argument("--noBall", help="Treat Ball as Background",
+                        action="store_true")
+    parser.add_argument("--noGoal", help="Treat Goal as Background",
+                        action="store_true")
+    parser.add_argument("--noRobot", help="Treat Robot as Background",
+                        action="store_true")
+    parser.add_argument("--noLine", help="Treat Lines as Background",
                         action="store_true")
     args = parser.parse_args()
     noScale = args.noScale
     v2 = args.v2
-    bo = args.ballOnly
+    nb = args.noBall
+    ng = args.noGoal
+    nr = args.noRobot
+    nl = args.noLine
     VGAStr = "VGA" if noScale else ""
     v2Str = "v2" if v2 else ""
-    boStr = "bo" if bo else ""
+    nbStr = "NoBall" if nb else ""
+    ngStr = "NoGoal" if ng else ""
+    nrStr = "NoRobot" if nr else ""
+    nlStr = "NoLine" if nl else ""
+
+    if nb and ng and nr and nl:
+        print("You need to have at least one non-background class!")
+        exit(-1)
 
 
     input_transform = Compose([
@@ -59,21 +75,12 @@ if __name__ == "__main__":
     valloader = data.DataLoader(datasets.ImageFolder("./data/Classification/val", transform=input_transform),
                                   batch_size=batchSize, shuffle=True,num_workers=6)
 
-    numClass = 2 if bo else 5
+    numClass = 5 - nb - ng - nr - nl
     numFeat = 32
     dropout = 0.1
-    poolFact = 2 if noScale else 4
 
-    class PB_FCN(nn.Module):
-        def __init__(self):
-            super(PB_FCN,self).__init__()
-            self.conv = DownSampler(numFeat, noScale, dropout)
-            self.classif = Classifier(numFeat*2,numClass,poolFact)
-        def forward(self, x):
-            ind = 0 if noScale else 1
-            return self.classif(self.conv(x)[ind])
 
-    model = PB_FCN_2(True,nClass=numClass) if v2 else PB_FCN()
+    model = PB_FCN_2(True,nClass=numClass) if v2 else PB_FCN(numFeat,numClass,1,noScale,0)
 
     weights = torch.ones(numClass)
     if torch.cuda.is_available():
@@ -91,7 +98,7 @@ if __name__ == "__main__":
 
     def cb():
         print("Best Model reloaded")
-        stateDict = torch.load("./pth/bestModel" + VGAStr + v2Str + boStr + ".pth",
+        stateDict = torch.load("./pth/bestModel" + VGAStr + v2Str + nbStr + ngStr + nrStr + nlStr + ".pth",
                                map_location=mapLoc)
         model.load_state_dict(stateDict)
 
@@ -117,8 +124,7 @@ if __name__ == "__main__":
             if torch.cuda.is_available():
                 images = images.float().cuda()
                 labels = labels.cuda()
-            if bo:
-                labels[labels>1] = 0
+            maskLabel(labels, nb, nr, ng, nl)
 
             optimizer.zero_grad()
 
@@ -154,8 +160,7 @@ if __name__ == "__main__":
             if torch.cuda.is_available():
                 images = images.float().cuda()
                 labels = labels.cuda()
-            if bo:
-                labels[labels>1] = 0
+            maskLabel(labels, nb, nr, ng, nl)
 
             pred = torch.squeeze(model(images))
             loss = criterion(pred, labels)
@@ -180,12 +185,9 @@ if __name__ == "__main__":
             bestLoss = running_loss/(i+1)
             bestAcc = running_acc/(imgCnt)
             print(conf)
-            torch.save(model.state_dict(), "./pth/bestModel" + VGAStr + v2Str + boStr + ".pth")
+            torch.save(model.state_dict(), "./pth/bestModel" + VGAStr + v2Str + nbStr + ngStr + nrStr + nlStr  + ".pth")
 
         scheduler.step(running_loss/(i+1))
 
-    if not v2:
-        cb()
-        torch.save(model.conv.state_dict(), "./pth/bestModel" + VGAStr + v2Str + boStr + ".pth")
     print("Finished: Best Validation Loss: %.4f Best Validation Acc: %.2f"  % (bestLoss, bestAcc))
 

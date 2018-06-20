@@ -23,6 +23,17 @@ class ToYUV(object):
         return rgb2yuv(img)
         #return img.convert('YCbCr')
 
+def maskLabel(label,nb,nr,ng,nl):
+    if nb:
+        label[label==1] = 0
+    if nr:
+        label[label==2] = 0
+    if ng:
+        label[label==3] = 0
+    if nl:
+        label[label==4] = 0
+    return label
+
 class ToLabel(object):
     def __call__(self, tensor):
         return torch.squeeze(tensor.long())

@@ -1,7 +1,10 @@
 import torch
 import numpy as np
+import os
 
 def saveParams( path, model, fName="weights.dat", skipClassifier=False ):
+    if not os.path.exists(path):
+        os.makedirs(path)
     i = 0
     params = np.empty(0)
     Dict = model.state_dict()
