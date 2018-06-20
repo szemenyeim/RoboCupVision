@@ -84,11 +84,13 @@ if __name__ == "__main__":
 
     root = "./data/FinetuneHorizon"
 
-    trainloader = data.DataLoader(SSDataSet(root, split="train", img_transform=input_transform_tr,
+    camera = "bottom" if bo else "both"
+
+    trainloader = data.DataLoader(SSDataSet(root, split="train", camera=camera, img_transform=input_transform_tr,
                                              label_transform=target_transform_tr),
                                   batch_size=batchSize, shuffle=True, num_workers=6)
 
-    valloader = data.DataLoader(SSDataSet(root, split="val", img_transform=input_transform,
+    valloader = data.DataLoader(SSDataSet(root, split="val", camera=camera, img_transform=input_transform,
                                              label_transform=target_transform),
                                   batch_size=batchSize, shuffle=True, num_workers=6)
 

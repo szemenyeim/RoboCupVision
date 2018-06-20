@@ -200,10 +200,11 @@ class LPDataSet(data.Dataset):
 
 
 class SSDataSet(data.Dataset):
-    def __init__(self, root, split="train", img_transform=None, label_transform=None):
+    def __init__(self, root, split="train", camera = "both", img_transform=None, label_transform=None):
         self.root = root
         self.split = split
         self.images = []
+        self.labels = []
         self.labels = []
         self.img_transform = img_transform
         self.label_transform = label_transform
@@ -212,11 +213,19 @@ class SSDataSet(data.Dataset):
         self.img_dir = osp.join(data_dir,"images")
         self.lab_dir = osp.join(data_dir,"labels")
 
-        for file in sorted(glob.glob1(self.img_dir, "*.png"),key=alphanum_key):
-            self.images.append(file)
-        for file in sorted(glob.glob1(self.lab_dir, "*.png"),key=alphanum_key):
-            self.labels.append(file)
+        imgFiles = sorted(glob.glob1(self.img_dir, "*.png"),key=alphanum_key)
+        txtFiles = sorted(glob.glob1(self.img_dir, "*.txt"),key=alphanum_key)
+        labFiles = sorted(glob.glob1(self.lab_dir, "*.png"),key=alphanum_key)
 
+        for img,lab,txt in zip(imgFiles,labFiles,txtFiles):
+            char = open(osp.join( self.img_dir, txt )).read()
+            condition = (camera== "both") or ((camera == "top") and (char == "u")) or ((camera == "bottom") and (char == "b"))
+            if condition:
+                self.images.append(img)
+                self.labels.append(lab)
+
+        print(self.__len__())
+        exit()
 
     def __len__(self):
         return len(self.images)
