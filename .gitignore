@@ -7,3 +7,4 @@ data/FineTune
 data/FineTuneHorizon
 data/LabelProp
 *.pyc
+/.DS_Store

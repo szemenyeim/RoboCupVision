@@ -116,7 +116,6 @@ if __name__ == "__main__":
     if bo:
         weights = weights[0:2]
 
-
     indices = []
     mapLoc = None if haveCuda else {'cuda:0': 'cpu'}
     if haveCuda:

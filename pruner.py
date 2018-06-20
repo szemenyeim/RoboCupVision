@@ -106,6 +106,7 @@ if __name__ == "__main__":
     weights = torch.FloatTensor([1,4,2,4,1.5])
     if bo:
         weights = weights[0:2]
+
     indices = []
     mapLoc = None if haveCuda else {'cuda:0': 'cpu'}
     if haveCuda:
