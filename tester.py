@@ -4,7 +4,7 @@ from torch.utils import data
 from model import PB_FCN, FCN, PB_FCN_2
 from duc import SegFull
 from dataset import SSDataSet
-from transform import Scale, ToLabel, Colorize, ToYUV
+from transform import Scale, ToLabel, Colorize, ToYUV, maskLabel
 from torchvision.transforms import Compose, Normalize, ToTensor
 from PIL import Image
 import progressbar
@@ -21,15 +21,23 @@ if __name__ == "__main__":
                         action="store_true")
     parser.add_argument("--pruned2", help="Use pruned2 net",
                         action="store_true")
-    parser.add_argument("--deep", help="Use Very deep model for reference",
-                        action="store_true")
     parser.add_argument("--noScale", help="Use VGA resolution",
                         action="store_true")
     parser.add_argument("--FCN", help="Use Normal FCN Network",
                         action="store_true")
     parser.add_argument("--v2", help="Use PB-FCNv2",
                         action="store_true")
-    parser.add_argument("--ballOnly", help="Train Binary segmenter for ball",
+    parser.add_argument("--noBall", help="Treat Ball as Background",
+                        action="store_true")
+    parser.add_argument("--noGoal", help="Treat Goal as Background",
+                        action="store_true")
+    parser.add_argument("--noRobot", help="Treat Robot as Background",
+                        action="store_true")
+    parser.add_argument("--noLine", help="Treat Lines as Background",
+                        action="store_true")
+    parser.add_argument("--topCam", help="Use Top Camera images only",
+                        action="store_true")
+    parser.add_argument("--bottomCam", help="Use Bottom Camera images only",
                         action="store_true")
     parser.add_argument("--dump", help="Dump model parameters",
                         action="store_true")
@@ -40,11 +48,15 @@ if __name__ == "__main__":
     fineTune = args.finetuned
     pruned = args.pruned
     pruned2 = args.pruned2
-    deep = args.deep
     noScale = args.noScale
     useFCN = args.FCN
     v2 = args.v2
-    bo = args.ballOnly
+    nb = args.noBall
+    ng = args.noGoal
+    nr = args.noRobot
+    nl = args.noLine
+    tc = args.topCam
+    bc = args.bottomCam
     dump = args.dump
     useCuda = torch.cuda.is_available() if args.useCuda else False
     if useFCN: noScale = False
@@ -52,12 +64,20 @@ if __name__ == "__main__":
 
     fineTuneStr = "Finetuned" if fineTune else ""
     pruneStr = "Pruned" if pruned else "Pruned2" if pruned2 else ""
-    deepStr = "Deep" if deep else ""
     FCNStr = "1" if useFCN else ""
     scaleStr = "VGA" if noScale else ""
     v2Str = "v2" if v2 else ""
-    boStr = "bo" if bo else ""
+    nbStr = "NoBall" if nb else ""
+    ngStr = "NoGoal" if ng else ""
+    nrStr = "NoRobot" if nr else ""
+    nlStr = "NoLine" if nl else ""
+    cameraString = "both" if tc == bc else( "top" if tc else "bottom")
+    cameraLoadStr = cameraString if fineTune else ""
     scale = 1 if noScale else 4
+
+    if nb and ng and nr and nl:
+        print("You need to have at least one non-background class!")
+        exit(-1)
 
     input_transform = Compose([
         Scale(scale, Image.BILINEAR),
@@ -83,16 +103,14 @@ if __name__ == "__main__":
         outDir = "./output/FinetuneHorizon/"
         root = "./data/FinetuneHorizon"
 
-    valloader = data.DataLoader(SSDataSet(root, split="val", img_transform=input_transform,
+    valloader = data.DataLoader(SSDataSet(root, split="val", camera=cameraString, img_transform=input_transform,
                                              label_transform=target_transform),
                                   batch_size=batchSize, shuffle=False)
 
-    numClass = 2 if bo else 5
+    numClass = 5 - nb - ng - nr - nl
     kernelSize = 1
     numPlanes = 32
-    if deep:
-        model = SegFull(numClass)
-    elif v2:
+    if v2:
         model = PB_FCN_2(False, nClass=numClass)
     elif useFCN:
         model = FCN()
@@ -104,11 +122,11 @@ if __name__ == "__main__":
         model = model.cuda()
         mapLoc = None
 
-    stateDict = torch.load("./pth/bestModelSeg" + FCNStr + scaleStr + v2Str + boStr + deepStr + fineTuneStr + pruneStr + ".pth", map_location=mapLoc)
+    stateDict = torch.load("./pth/bestModelSeg" + FCNStr + scaleStr + v2Str + nbStr + ngStr + nrStr + nlStr + cameraLoadStr + fineTuneStr + pruneStr + ".pth", map_location=mapLoc)
     model.load_state_dict(stateDict)
 
     if dump:
-        saveParams("./weights" + scaleStr + v2Str + boStr, model.cpu(), "weights.dat" if pruned else "weights2.dat", v2)
+        saveParams("./weights/" + scaleStr + v2Str + nbStr + ngStr + nrStr + nlStr + cameraLoadStr, model.cpu(), "weights.dat" if pruned else "weights2.dat", v2)
         if useCuda:
             model = model.cuda()
 
@@ -122,13 +140,11 @@ if __name__ == "__main__":
     t = 0
     bar = progressbar.ProgressBar(0, len(valloader), redirect_stdout=False)
     for i, (images, labels) in enumerate(valloader):
+        images = images.float()
         if useCuda:
             images = images.float().cuda()
             labels = labels.cuda()
-        else:
-            images = images.float()
-        if bo:
-            labels[labels > 1] = 0
+        labels = maskLabel(labels, nb, nr, ng, nl)
 
         beg = time.clock()
         pred = model(images)

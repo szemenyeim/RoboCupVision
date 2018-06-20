@@ -2,10 +2,9 @@ import torch
 from torch import nn
 from torch.utils import data
 import lr_scheduler
-from model import  CrossEntropyLoss2d, PB_FCN, loadModel, pruneModel, PB_FCN_2
-from duc import SegFull
+from model import  CrossEntropyLoss2d, PB_FCN, pruneModel, PB_FCN_2
 from dataset import SSDataSet
-from transform import Scale, ToLabel, HorizontalFlip, VerticalFlip, ToYUV
+from transform import Scale, ToLabel, HorizontalFlip, VerticalFlip, ToYUV, maskLabel
 from visualize import LinePlotter
 from torchvision.transforms import Compose, Normalize, ToTensor, ColorJitter
 from PIL import Image
@@ -21,31 +20,55 @@ if __name__ == "__main__":
                         action="store_true")
     parser.add_argument("--prune", help="Prune network weights",
                         action="store_true")
-    parser.add_argument("--deep", help="Use Very deep model for reference",
-                        action="store_true")
     parser.add_argument("--noScale", help="Use VGA resolution",
                         action="store_true")
     parser.add_argument("--v2", help="Use PB-FCNv2",
                         action="store_true")
-    parser.add_argument("--ballOnly", help="Train Binary segmenter for ball",
+    parser.add_argument("--noBall", help="Treat Ball as Background",
+                        action="store_true")
+    parser.add_argument("--noGoal", help="Treat Goal as Background",
+                        action="store_true")
+    parser.add_argument("--noRobot", help="Treat Robot as Background",
+                        action="store_true")
+    parser.add_argument("--noLine", help="Treat Lines as Background",
+                        action="store_true")
+    parser.add_argument("--topCam", help="Use Top Camera images only",
+                        action="store_true")
+    parser.add_argument("--bottomCam", help="Use Bottom Camera images only",
                         action="store_true")
     args = parser.parse_args()
 
     fineTune = args.finetune
     pruning = args.prune
-    deep = args.deep
     noScale = args.noScale
     v2 = args.v2
-    bo = args.ballOnly
+    nb = args.noBall
+    ng = args.noGoal
+    nr = args.noRobot
+    nl = args.noLine
+    tc = args.topCam
+    bc = args.bottomCam
     haveCuda = torch.cuda.is_available()
 
     fineTuneStr = "Finetuned" if fineTune else ""
     pruneStr = "Pruned" if pruning else ""
-    deepStr = "Deep" if deep else ""
     scaleStr = "VGA" if noScale else ""
     v2Str = "v2" if v2 else ""
-    boStr = "bo" if bo else ""
+    nbStr = "NoBall" if nb else ""
+    ngStr = "NoGoal" if ng else ""
+    nrStr = "NoRobot" if nr else ""
+    nlStr = "NoLine" if nl else ""
+    cameraString = "both" if tc == bc else( "top" if tc else "bottom")
+    cameraSaveStr = cameraString if fineTune else ""
     scale = 1 if noScale else 4
+
+    if nb and ng and nr and nl:
+        print("You need to have at least one non-background class!")
+        exit(-1)
+
+    if cameraString != "both" and not fineTune:
+        print("You can only select camera images for the finetune dataset. Using both cameras by default")
+        cameraString = "both"
 
     labSize = (480.0/scale, 640.0/scale)
 
@@ -91,21 +114,19 @@ if __name__ == "__main__":
 
     root = "./data/FinetuneHorizon" if fineTune else "./data"
 
-    trainloader = data.DataLoader(SSDataSet(root, split="train", img_transform=input_transform_tr,
+    trainloader = data.DataLoader(SSDataSet(root, split="train", camera=cameraString, img_transform=input_transform_tr,
                                              label_transform=target_transform_tr),
                                   batch_size=batchSize, shuffle=True, num_workers=6)
 
-    valloader = data.DataLoader(SSDataSet(root, split="val", img_transform=input_transform,
+    valloader = data.DataLoader(SSDataSet(root, split="val", camera=cameraString, img_transform=input_transform,
                                              label_transform=target_transform),
                                   batch_size=batchSize, shuffle=True, num_workers=6)
 
 
-    numClass = 2 if bo else 5
+    numClass = 5 - nb - ng - nr - nl
     numPlanes = 32
     kernelSize = 1
-    if deep:
-        model = SegFull(numClass)
-    elif v2:
+    if v2:
         model = PB_FCN_2(False,nClass=numClass)
     else:
         model = PB_FCN(numPlanes, numClass, kernelSize, noScale, 0)
@@ -113,8 +134,8 @@ if __name__ == "__main__":
     weights = torch.FloatTensor([1,6,1.5,3,3])
     if fineTune:
         weights = torch.FloatTensor([1,4,2,4,1.5])
-    if bo:
-        weights = weights[0:2]
+    classIndices = torch.LongTensor([1, (not nb), (not nr), (not ng), (not nl)])
+    weights = weights[classIndices]
 
     indices = []
     mapLoc = None if haveCuda else {'cuda:0': 'cpu'}
@@ -122,7 +143,12 @@ if __name__ == "__main__":
         model = model.cuda()
         weights = weights.cuda()
 
-    loadModel(model,noScale,v2,bo,deep,fineTune,pruning,mapLoc)
+    fineTuneLoadStr = "Seg" if fineTune else ""
+    pruneLoadStr = "Finetuned" if pruning else ""
+    camLoadStr = cameraString if pruning else ""
+    path = "./pth/bestModel" + fineTuneLoadStr + scaleStr + v2Str + nbStr + ngStr + nrStr + nlStr + camLoadStr + pruneLoadStr + ".pth"
+    stateDict = torch.load(path, map_location=mapLoc)
+    model.load_state_dict(stateDict)
 
     if v2 and not fineTune:
         for m in model.upPart.modules():
@@ -159,7 +185,7 @@ if __name__ == "__main__":
 
     def cb():
         print("Best Model reloaded")
-        stateDict = torch.load("./pth/bestModelSeg" + scaleStr + v2Str + boStr + deepStr + fineTuneStr + pruneStr + ".pth",
+        stateDict = torch.load("./pth/bestModelSeg" + scaleStr + v2Str + nbStr + ngStr + nrStr + nlStr + cameraSaveStr + fineTuneStr + pruneStr + ".pth",
                                map_location=mapLoc)
         model.load_state_dict(stateDict)
 
@@ -183,8 +209,7 @@ if __name__ == "__main__":
             if torch.cuda.is_available():
                 images = images.float().cuda()
                 labels = labels.cuda()
-            if bo:
-                labels[labels>1] = 0
+            labels = maskLabel(labels, nb, nr, ng, nl)
 
             optimizer.zero_grad()
 
@@ -227,8 +252,7 @@ if __name__ == "__main__":
             if torch.cuda.is_available():
                 images = images.float().cuda()
                 labels = labels.cuda()
-            if bo:
-                labels[labels>1] = 0
+            maskLabel(labels, nb, nr, ng, nl)
 
             pred = model(images)
             loss = criterion(pred,labels)
@@ -283,7 +307,7 @@ if __name__ == "__main__":
             bestAcc = meanClassAcc
             bestTAcc = running_acc/(imgCnt)
 
-            torch.save(model.state_dict(), "./pth/bestModelSeg" + scaleStr + v2Str + boStr + deepStr + fineTuneStr + pruneStr + ".pth")
+            torch.save(model.state_dict(), "./pth/bestModelSeg" + scaleStr + v2Str + nbStr + ngStr + nrStr + nlStr + cameraSaveStr + fineTuneStr + pruneStr + ".pth")
 
         scheduler.step(currLoss)
 
