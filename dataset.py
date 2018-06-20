@@ -224,9 +224,6 @@ class SSDataSet(data.Dataset):
                 self.images.append(img)
                 self.labels.append(lab)
 
-        print(self.__len__())
-        exit()
-
     def __len__(self):
         return len(self.images)
 
