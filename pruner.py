@@ -105,7 +105,7 @@ if __name__ == "__main__":
     else:
         model = PB_FCN(numPlanes, numClass, kernelSize, noScale, 0)
 
-    weights = torch.FloatTensor([1,4,2,4,1.5])
+    weights = torch.FloatTensor([1,4,1.5,5,1.5])
     if bo:
         weights = weights[0:2]
 

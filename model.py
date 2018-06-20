@@ -612,7 +612,7 @@ def pruneModel(params, lower = 73, upper = 77):
 
     return indices
 
-def pruneModel2(params, ratio, hT, lT):
+def pruneModel2(params, ratio, lT, hT):
 
     indices = []
     for param in params:
