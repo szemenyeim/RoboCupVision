@@ -23,8 +23,6 @@ if __name__ == "__main__":
                         action="store_true")
     parser.add_argument("--noScale", help="Use VGA resolution",
                         action="store_true")
-    parser.add_argument("--FCN", help="Use Normal FCN Network",
-                        action="store_true")
     parser.add_argument("--v2", help="Use PB-FCNv2",
                         action="store_true")
     parser.add_argument("--noBall", help="Treat Ball as Background",
@@ -49,7 +47,6 @@ if __name__ == "__main__":
     pruned = args.pruned
     pruned2 = args.pruned2
     noScale = args.noScale
-    useFCN = args.FCN
     v2 = args.v2
     nb = args.noBall
     ng = args.noGoal
@@ -59,12 +56,10 @@ if __name__ == "__main__":
     bc = args.bottomCam
     dump = args.dump
     useCuda = torch.cuda.is_available() if args.useCuda else False
-    if useFCN: noScale = False
 
 
     fineTuneStr = "Finetuned" if fineTune else ""
     pruneStr = "Pruned" if pruned else "Pruned2" if pruned2 else ""
-    FCNStr = "1" if useFCN else ""
     scaleStr = "VGA" if noScale else ""
     v2Str = "v2" if v2 else ""
     nbStr = "NoBall" if nb else ""
@@ -112,8 +107,6 @@ if __name__ == "__main__":
     numPlanes = 32
     if v2:
         model = PB_FCN_2(False, nClass=numClass)
-    elif useFCN:
-        model = FCN()
     else:
         model = PB_FCN(numPlanes, numClass, kernelSize, noScale, 0)
 
@@ -122,7 +115,7 @@ if __name__ == "__main__":
         model = model.cuda()
         mapLoc = None
 
-    stateDict = torch.load("./pth/bestModelSeg" + FCNStr + scaleStr + v2Str + nbStr + ngStr + nrStr + nlStr + cameraLoadStr + fineTuneStr + pruneStr + ".pth", map_location=mapLoc)
+    stateDict = torch.load("./pth/bestModelSeg" + scaleStr + v2Str + nbStr + ngStr + nrStr + nlStr + cameraLoadStr + fineTuneStr + pruneStr + ".pth", map_location=mapLoc)
     model.load_state_dict(stateDict)
 
     if dump:
