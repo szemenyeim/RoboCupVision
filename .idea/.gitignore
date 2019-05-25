@@ -1,1 +1,4 @@
 *.xml
+/RoboCupVision.iml
+/misc.xml
+/workspace.xml

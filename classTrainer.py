@@ -1,179 +1,193 @@
 import torch
-from torch.autograd import Variable
+import torch.nn as nn
 from torch.utils import data
-from model import DownSampler, Classifier
+from model import PB_FCN, PB_FCN_2
 import lr_scheduler
 from visualize import LinePlotter
-from torchvision.transforms import Compose, Normalize, ToTensor, RandomHorizontalFlip
-from transform import ToYUV, RandomBrightness, RandomColor, RandomContrast, RandomHue
+from torchvision.transforms import Compose, Normalize, ToTensor, RandomHorizontalFlip, ColorJitter
+from transform import ToYUV, maskLabel
 import torchvision.datasets as datasets
 import progressbar
 import numpy as np
 import argparse
 
-parser = argparse.ArgumentParser()
-parser.add_argument("--noScale", help="Use VGA resolution",
-                    action="store_true")
-args = parser.parse_args()
-noScale = args.noScale
-VGAStr = "VGA" if noScale else ""
+if __name__ == "__main__":
 
-input_transform = Compose([
-    ToYUV(),
-    ToTensor(),
-    Normalize([.5, 0, 0], [.5, .5, .5]),
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--noScale", help="Use VGA resolution",
+                        action="store_true")
+    parser.add_argument("--v2", help="Use PB-FCNv2",
+                        action="store_true")
+    parser.add_argument("--noBall", help="Treat Ball as Background",
+                        action="store_true")
+    parser.add_argument("--noGoal", help="Treat Goal as Background",
+                        action="store_true")
+    parser.add_argument("--noRobot", help="Treat Robot as Background",
+                        action="store_true")
+    parser.add_argument("--noLine", help="Treat Lines as Background",
+                        action="store_true")
+    args = parser.parse_args()
+    noScale = args.noScale
+    v2 = args.v2
+    nb = args.noBall
+    ng = args.noGoal
+    nr = args.noRobot
+    nl = args.noLine
+    VGAStr = "VGA" if noScale else ""
+    v2Str = "v2" if v2 else ""
+    nbStr = "NoBall" if nb else ""
+    ngStr = "NoGoal" if ng else ""
+    nrStr = "NoRobot" if nr else ""
+    nlStr = "NoLine" if nl else ""
 
-])
+    if nb and ng and nr and nl:
+        print("You need to have at least one non-background class!")
+        exit(-1)
 
-input_transform_tr = Compose([
-    RandomHorizontalFlip(),
-    RandomColor(),
-    RandomContrast(),
-    RandomBrightness(),
-    RandomHue(32,32),
-    ToYUV(),
-    ToTensor(),
-    Normalize([.5, 0, 0], [.5, .5, .5]),
 
-])
+    input_transform = Compose([
+        ToYUV(),
+        ToTensor(),
+        Normalize([.5, 0, 0], [.5, .5, .5]),
 
-seed = 12345678
-np.random.seed(seed)
-torch.manual_seed(seed)
-if torch.cuda.is_available():
-    torch.cuda.manual_seed(seed)
+    ])
 
-batchSize = 32
+    input_transform_tr = Compose([
+        RandomHorizontalFlip(),
+        ColorJitter(brightness=0.5,contrast=0.5,saturation=0.4,hue=0.3),
+        ToYUV(),
+        ToTensor(),
+        Normalize([.5, 0, 0], [.5, .5, .5]),
 
-trainloader = data.DataLoader(datasets.ImageFolder("./data/Classification/train/", transform=input_transform_tr),
-                              batch_size=batchSize, shuffle=True)
+    ])
 
-valloader = data.DataLoader(datasets.ImageFolder("./data/Classification/val", transform=input_transform),
-                              batch_size=batchSize, shuffle=True)
+    seed = 12345678
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
 
-numClass = 5
-numFeat = 32
-dropout = 0.1
-modelConv = DownSampler(numFeat, noScale, dropout)
-poolFact = 2 if noScale else 4
-modelClass = Classifier(numFeat*2,numClass,poolFact)
-weights = torch.ones(numClass)
-if torch.cuda.is_available():
-    modelConv = modelConv.cuda()
-    modelClass = modelClass.cuda()
-    weights = weights.cuda()
+    batchSize = 64 if v2 else 32
 
-criterion = torch.nn.CrossEntropyLoss(weights)
+    trainloader = data.DataLoader(datasets.ImageFolder("./data/Classification/train/", transform=input_transform_tr),
+                                  batch_size=batchSize, shuffle=True, num_workers=6)
 
-mapLoc = None if torch.cuda.is_available() else {'cuda:0': 'cpu'}
+    valloader = data.DataLoader(datasets.ImageFolder("./data/Classification/val", transform=input_transform),
+                                  batch_size=batchSize, shuffle=True,num_workers=6)
 
-epochs = 200
-lr = 1e-2
-weight_decay = 1e-5
-momentum = 0.9
+    numClass = 5 - nb - ng - nr - nl
+    numFeat = 32
+    dropout = 0.1
 
-def cb():
-    print "Best Model reloaded"
-    stateDict = torch.load("./pth/bestModel" + VGAStr + ".pth",
-                           map_location=mapLoc)
-    modelConv.load_state_dict(stateDict)
 
-optimizer = torch.optim.SGD( [
-                                { 'params': modelConv.parameters()},
-                                { 'params': modelClass.parameters()}, ],
-                             lr=lr, momentum=momentum, weight_decay=weight_decay )
-scheduler = lr_scheduler.ReduceLROnPlateau(optimizer,'min',factor=0.5,patience=20,verbose=True,threshold=1e-3, cb=cb)
+    model = PB_FCN_2(True,nClass=numClass) if v2 else PB_FCN(numFeat,numClass,1,noScale,True)
 
-ploter = LinePlotter()
+    weights = torch.ones(numClass)
+    if torch.cuda.is_available():
+        model = model.cuda()
+        weights = weights.cuda()
 
-bestLoss = 100
-bestAcc = 0
-bestTest = 0
+    criterion = torch.nn.CrossEntropyLoss(weights)
 
-for epoch in range(epochs):
+    mapLoc = None if torch.cuda.is_available() else {'cuda:0': 'cpu'}
 
-    modelConv.train()
-    modelClass.train()
-    running_loss = 0.0
-    running_acc = 0.0
-    imgCnt = 0
-    conf = torch.zeros(numClass,numClass)
-    bar = progressbar.ProgressBar(0,len(trainloader),redirect_stdout=False)
-    for i, (images, labels) in enumerate(trainloader):
-        if torch.cuda.is_available():
-            images = Variable(images.cuda())
-            labels = Variable(labels.cuda())
-        else:
-            images = Variable(images)
-            labels = Variable(labels)
+    epochs = 200
+    lr = 1e-2
+    weight_decay = 1e-5
+    momentum = 0.9
 
-        optimizer.zero_grad()
+    def cb():
+        print("Best Model reloaded")
+        stateDict = torch.load("./pth/bestModel" + VGAStr + v2Str + nbStr + ngStr + nrStr + nlStr + ".pth",
+                               map_location=mapLoc)
+        model.load_state_dict(stateDict)
 
-        final = modelConv(images)[0] if noScale else modelConv(images)[1]
-        pred = torch.squeeze(modelClass(final))
-        loss = criterion(pred,labels)
+    optimizer = torch.optim.SGD( [{ 'params': model.parameters()}, ],
+                                 lr=lr, momentum=momentum, weight_decay=weight_decay )
+    scheduler = lr_scheduler.ReduceLROnPlateau(optimizer,'min',factor=0.5,patience=20,verbose=True,threshold=1e-3, cb=cb)
 
-        loss.backward()
-        optimizer.step()
+    ploter = LinePlotter("RoboCup")
 
-        bSize = images.data.size()[0]
-        imgCnt += bSize
+    bestLoss = 100
+    bestAcc = 0
+    bestTest = 0
 
-        running_loss += loss.data[0]
-        _, predClass = torch.max(pred, 1)
-        running_acc += torch.sum( predClass.data == labels.data )*100
+    for epoch in range(epochs):
 
-        for j in range(bSize):
-            conf[(predClass.data[j],labels.data[j])] += 1
+        model.train()
+        running_loss = 0.0
+        running_acc = 0.0
+        imgCnt = 0
+        conf = torch.zeros(numClass,numClass).long()
+        bar = progressbar.ProgressBar(0,len(trainloader),redirect_stdout=False)
+        for i, (images, labels) in enumerate(trainloader):
+            if torch.cuda.is_available():
+                images = images.float().cuda()
+                labels = labels.cuda()
+            maskLabel(labels, nb, nr, ng, nl)
 
-        bar.update(i)
+            optimizer.zero_grad()
 
-    bar.finish()
-    print("Epoch [%d] Training Loss: %.4f Training Acc: %.2f" % (epoch+1, running_loss/(i+1), running_acc/(imgCnt)))
-    #ploter.plot("loss", "train", epoch+1, running_loss/(i+1))
+            pred = torch.squeeze(model(images))
+            loss = criterion(pred,labels)
 
-    running_loss = 0.0
-    running_acc = 0.0
-    imgCnt = 0
-    conf = torch.zeros(numClass,numClass)
-    modelConv.eval()
-    modelClass.eval()
-    bar = progressbar.ProgressBar(0, len(valloader), redirect_stdout=False)
-    for i, (images, labels) in enumerate(valloader):
-        if torch.cuda.is_available():
-            images = Variable(images.cuda())
-            labels = Variable(labels.cuda())
-        else:
-            images = Variable(images)
-            labels = Variable(labels)
+            loss.backward()
+            optimizer.step()
 
-        final = modelConv(images)[0] if noScale else modelConv(images)[1]
-        pred = torch.squeeze(modelClass(final))
-        loss = criterion(pred, labels)
+            bSize = images.size()[0]
+            imgCnt += bSize
 
-        bSize = images.data.size()[0]
-        imgCnt += bSize
+            running_loss += loss.item()
+            _, predClass = torch.max(pred, 1)
+            running_acc += torch.sum( predClass == labels ).item()*100
 
-        running_loss += loss.data[0]
-        _, predClass = torch.max(pred, 1)
-        running_acc += torch.sum(predClass.data == labels.data)*100
+            for j in range(bSize):
+                conf[(predClass[j],labels[j])] += 1
 
-        for j in range(bSize):
-            conf[(predClass.data[j],labels.data[j])] += 1
+            bar.update(i)
 
-        bar.update(i)
+        bar.finish()
+        print("Epoch [%d] Training Loss: %.4f Training Acc: %.2f" % (epoch+1, running_loss/(i+1), running_acc/(imgCnt)))
+        #ploter.plot("loss", "train", epoch+1, running_loss/(i+1))
 
-    bar.finish()
-    print("Epoch [%d] Validation Loss: %.4f Validation Acc: %.2f" % (epoch+1, running_loss/(i+1), running_acc/(imgCnt)))
-    #ploter.plot("loss", "val", epoch+1, running_loss/(i+1))
+        running_loss = 0.0
+        running_acc = 0.0
+        imgCnt = 0
+        conf = torch.zeros(numClass,numClass).long()
+        model.eval()
+        bar = progressbar.ProgressBar(0, len(valloader), redirect_stdout=False)
+        for i, (images, labels) in enumerate(valloader):
+            if torch.cuda.is_available():
+                images = images.float().cuda()
+                labels = labels.cuda()
+            maskLabel(labels, nb, nr, ng, nl)
 
-    if bestAcc < running_acc/(imgCnt):
-        bestLoss = running_loss/(i+1)
-        bestAcc = running_acc/(imgCnt)
-        print conf
-        torch.save(modelConv.state_dict(), "./pth/bestModel" + VGAStr + ".pth")
+            pred = torch.squeeze(model(images))
+            loss = criterion(pred, labels)
 
-    scheduler.step(running_loss/(i+1))
+            bSize = images.size()[0]
+            imgCnt += bSize
 
-print("Finished: Best Validation Loss: %.4f Best Validation Acc: %.2f"  % (bestLoss, bestAcc))
+            running_loss += loss.item()
+            _, predClass = torch.max(pred, 1)
+            running_acc += torch.sum( predClass == labels ).item()*100
+
+            for j in range(bSize):
+                conf[(predClass[j],labels[j])] += 1
+
+            bar.update(i)
+
+        bar.finish()
+        print("Epoch [%d] Validation Loss: %.4f Validation Acc: %.2f" % (epoch+1, running_loss/(i+1), running_acc/(imgCnt)))
+        #ploter.plot("loss", "val", epoch+1, running_loss/(i+1))
+
+        if bestLoss > running_loss/(i+1):
+            bestLoss = running_loss/(i+1)
+            bestAcc = running_acc/(imgCnt)
+            print(conf)
+            torch.save(model.state_dict(), "./pth/bestModel" + VGAStr + v2Str + nbStr + ngStr + nrStr + nlStr  + ".pth")
+
+        scheduler.step(running_loss/(i+1))
+
+    print("Finished: Best Validation Loss: %.4f Best Validation Acc: %.2f"  % (bestLoss, bestAcc))
 

@@ -1,0 +1,1 @@
+Get the datasets from here: http://3dmr.iit.bme.hu/research/robocup/Datasets/index.html
