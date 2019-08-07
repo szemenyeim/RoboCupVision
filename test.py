@@ -235,7 +235,7 @@ if __name__ == '__main__':
 
     batchSize = 16 if (finetune or noScale) else 64
 
-    root = "./data" if sys.platform != 'win32' else "E:/RoboCup"
+    root = "../data" if sys.platform != 'win32' else "E:/RoboCup"
     if finetune:
         root += "/FinetuneHorizon"
 

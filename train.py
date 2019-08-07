@@ -289,7 +289,7 @@ if __name__ == '__main__':
 
     batchSize = 16 if finetune else (32 if noScale else 64)
 
-    root = "./data" if sys.platform != 'win32' else "E:/RoboCup"
+    root = "../data" if sys.platform != 'win32' else "E:/RoboCup"
 
     trainloader = data.DataLoader(SSYUVDataset(root,img_size=labSize,train=True,finetune=finetune,camera=cameraString),
                                   batch_size=batchSize, shuffle=True, num_workers=5)
@@ -301,7 +301,7 @@ if __name__ == '__main__':
     numPlanes = 32
     kernelSize = 1
 
-    weights = Tensor([1, 2, 6, 3, 2]) if opt.useDice else Tensor([1, 10, 15, 5, 2])
+    weights = Tensor([1, 2, 6, 3, 2]) if opt.useDice else Tensor([1, 10, 30, 10, 2])
     if finetune:
         weights = Tensor([1, 6, 2, 10, 4])
     classIndices = torch.LongTensor([1, (not nb), (not nr), (not ng), (not nl)])

@@ -9,6 +9,7 @@ import re
 import os
 import torchvision.transforms as transforms
 import torchvision.transforms.functional as F
+from skimage.color import rgb2yuv
 
 class ColorJitter(object):
     def __init__(self,b=0.3,c=0.3,s=0.3,h=3.1415/6):
@@ -51,6 +52,11 @@ def get_immediate_subdirectories(a_dir):
     return [name for name in os.listdir(a_dir)
             if os.path.isdir(os.path.join(a_dir, name))]
 
+class ToYUV(object):
+    def __call__(self, img):
+        return rgb2yuv(img)
+        #return img.convert('YCbCr')
+
 class SSYUVDataset(data.Dataset):
     def __init__(self, data_dir, img_size=(120,160), train=True, finetune = False,camera = "both"):
         self.img_shape = img_size
@@ -67,7 +73,7 @@ class SSYUVDataset(data.Dataset):
         self.labels =[]
 
         if finetune:
-            data_dir = osp.join(data_dir,"FintuneHorizon")
+            data_dir = osp.join(data_dir,"FinetuneHorizon")
 
         data_dir = osp.join(data_dir,"train" if train else "val")
         self.img_dir = osp.join(data_dir, "images")
@@ -101,14 +107,15 @@ class SSYUVDataset(data.Dataset):
         img_file = osp.join(self.img_dir, self.images[index])
         lab_file = osp.join(self.lab_dir, self.labels[index])
 
-        img = Image.open(img_file)
+        img = Image.open(img_file).convert('RGB')
         label = Image.open(lab_file).convert('I')
 
-        if self.img_size != img.size:
+        if self.img_size[0] != img.size[1] and self.img_size[1] != img.size[0]:
             img = self.resize(img)
+        if self.img_size[0] != label.size[1] and self.img_size[1] != label.size[0]:
             label = self.labResize(label)
 
-        img = transforms.functional.to_tensor(img)
+        img = transforms.functional.to_tensor(img).float()
         label = transforms.functional.to_tensor(label)
         img = self.normalize(img)
         if self.train:

@@ -48,7 +48,7 @@ class DataSetExtractor():
             img = Image.fromarray(maskArr)
             # Save image
             name = self.maskNames[i].split(".")[0]
-            img.save("E:/RoboCup/val/labels/" + name + ".png")
+            img.save("E:/RoboCup/YOLOBU/Labels/Train/" + name + ".png")
             #img = Colorize(torch.from_numpy(np.array(img, np.int32, copy=False)))
             #Image.fromarray(img.permute(1,2,0).numpy()).show()
             print(i)
@@ -160,5 +160,5 @@ class DataSetExtractor():
         currTag = self.__getTag(key)
         return(int(self.labelDict[currTag]))
 
-dataSetExtractor = DataSetExtractor("E:/RoboCup/YOLOBU/Masks/Test/")
+dataSetExtractor = DataSetExtractor("E:/RoboCup/YOLOBU/Masks/Train/")
 dataSetExtractor.extractDataSet()
