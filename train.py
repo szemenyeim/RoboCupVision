@@ -222,7 +222,7 @@ if __name__ == '__main__':
     learning_rate = opt.lr#*2 if finetune and not opt.transfer else opt.lr
     dec = opt.decay if finetune else opt.decay/10
     transfers = [1, 2, 3, 4] if opt.transfer else [0]
-    decays = [1e-3, 5e-4, 1e-4, 2.5e-5] if (finetune and not opt.transfer) else [dec]
+    decays = [5e-4, 1e-4, 2.5e-5, 1e-5] if (finetune and not opt.transfer) else [dec]
     if opt.v2:
         decays = [decay*2 for decay in decays]
     noScale = opt.noScale
