@@ -214,7 +214,7 @@ if __name__ == '__main__':
     parser.add_argument("--topCam", help="Use Top Camera images only", action="store_true")
     parser.add_argument("--bottomCam", help="Use Bottom Camera images only", action="store_true")
     parser.add_argument("--lr", help="Learning rate", type=float, default=1e-1)
-    parser.add_argument("--decay", help="Weight decay", type=float, default=1e-4)
+    parser.add_argument("--decay", help="Weight decay", type=float, default=5e-5)
     parser.add_argument("--transfer", help="Layers to truly train", action="store_true")
     opt = parser.parse_args()
 
@@ -222,7 +222,7 @@ if __name__ == '__main__':
     learning_rate = opt.lr#*2 if finetune and not opt.transfer else opt.lr
     dec = opt.decay if finetune else opt.decay/10
     transfers = [1, 2, 3, 4] if opt.transfer else [0]
-    decays = [5e-4, 1e-4, 2.5e-5, 1e-5] if (finetune and not opt.transfer) else [dec]
+    decays = [5e-4, 2.5e-4, 1e-4, 5e-5] if (finetune and not opt.transfer) else [dec]
     if opt.v2:
         decays = [decay*2 for decay in decays]
     noScale = opt.noScale
