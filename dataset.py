@@ -66,8 +66,8 @@ class SSYUVDataset(data.Dataset):
         self.jitter = ColorJitter(0.3,0.3,0.3,3.1415/6)
         self.resize = transforms.Resize(img_size)
         self.labResize = transforms.Resize(img_size,Image.NEAREST)
-        self.mean = [0.36224657, 0.41139355, 0.28278301] if finetune else [0.4637419, 0.47166784, 0.48316576]
-        self.std = [0.3132638, 0.21061972, 0.34144647] if finetune else [0.45211827, 0.16890674, 0.18645908]
+        self.mean = [0.34190056, 0.4833289,  0.48565758] if finetune else [0.36269532, 0.41144562, 0.282713]
+        self.std = [0.47421749, 0.13846053, 0.1714848] if finetune else [0.31111388, 0.21010718, 0.34060917]
         self.normalize = transforms.Normalize(mean=self.mean,std=self.std)
         self.images =[]
         self.labels =[]
