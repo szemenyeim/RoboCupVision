@@ -2,6 +2,68 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+class DiceLoss(nn.Module):
+    def __init__(self,weights, eps=1e-7):
+        super(DiceLoss,self).__init__()
+        self.weights = weights/weights.sum().item()*weights.shape[0]
+        self.eps = eps
+
+    def __call__(self, logits, true):
+        """Computes the Sørensen–Dice loss.
+        Note that PyTorch optimizers minimize a loss. In this
+        case, we would like to maximize the dice loss so we
+        return the negated dice loss.
+        Args:
+            true: a tensor of shape [B, 1, H, W].
+            logits: a tensor of shape [B, C, H, W]. Corresponds to
+                the raw output or logits of the model.
+            eps: added to the denominator for numerical stability.
+        Returns:
+            dice_loss: the Sørensen–Dice loss.
+        """
+        num_classes = logits.shape[1]
+        if num_classes == 1:
+            true_1_hot = torch.eye(num_classes + 1)[true.squeeze(1)]
+            true_1_hot = true_1_hot.permute(0, 3, 1, 2).float()
+            true_1_hot_f = true_1_hot[:, 0:1, :, :]
+            true_1_hot_s = true_1_hot[:, 1:2, :, :]
+            true_1_hot = torch.cat([true_1_hot_s, true_1_hot_f], dim=1)
+            pos_prob = torch.sigmoid(logits)
+            neg_prob = 1 - pos_prob
+            probas = torch.cat([pos_prob, neg_prob], dim=1)
+        else:
+            true_1_hot = torch.eye(num_classes)[true.squeeze(1).long()]
+            true_1_hot = true_1_hot.permute(0, 3, 1, 2).float()
+            probas = F.softmax(logits, dim=1)
+        true_1_hot = true_1_hot.type(logits.type())
+        dims = (0,) + tuple(range(2, true.ndimension()+1))
+        intersection = torch.sum(probas * true_1_hot, dims)
+        cardinality = torch.sum(probas + true_1_hot, dims)
+        dice_loss = (2. * self.weights * intersection / (cardinality + self.eps)).mean()
+        return (1 - dice_loss)
+
+def pruneModelNew(params, ratio = 0.01):
+    i = 0
+    indices = []
+    for param in params:
+        if param.dim() > 1:
+            thresh = torch.max(torch.abs(param)) * ratio
+            print("Pruned %f%% of the weights" % (
+            float(torch.sum(torch.abs(param) < thresh)) / float(torch.sum(param != 0)) * 100))
+            param[torch.abs(param) < thresh] = 0
+            indices.append(torch.abs(param) < thresh)
+            i += 1
+
+    return indices
+
+def count_zero_weights(model):
+    nonzeroWeights = 0
+    totalWeights = 0
+    for param in model.parameters():
+        max = torch.max(torch.abs(param))
+        nonzeroWeights += (torch.abs(param) < max*0.01).sum().float()
+        totalWeights += param.numel()
+    return float(nonzeroWeights/totalWeights)
 
 def getParamSize(x):
     size = x.size()
@@ -12,9 +74,9 @@ def getParamSize(x):
 
 # Pixelwise Cross-entropy loss
 class CrossEntropyLoss2d(nn.Module):
-    def __init__(self, weight=None, size_average=True):
+    def __init__(self, weight=None):
         super(CrossEntropyLoss2d, self).__init__()
-        self.nll_loss = nn.NLLLoss(weight, size_average)
+        self.nll_loss = nn.NLLLoss(weight, reduction='mean')
 
     def forward(self, inputs, targets):
         return self.nll_loss(F.log_softmax(inputs,dim=1), targets)
@@ -30,11 +92,23 @@ class View(nn.Module):
 class Conv(nn.Module):
     def __init__(self, inplanes, planes, size, stride=1):
         super(Conv, self).__init__()
+        self.stride = stride
+        self.size = size
+        self.inch = inplanes
+        self.ch = planes
         self.conv = nn.Conv2d(inplanes, planes, kernel_size=size, padding=size // 2, stride=stride)
         self.bn = nn.BatchNorm2d(planes)
 
     def forward(self, x):
         return self.bn(F.relu(self.conv(x)))
+
+    def getComp(self,W,H, pruned):
+        W = W // self.stride
+        H = H // self.stride
+
+        ratio = float(self.conv.weight.nonzero().size(0)) / float(self.conv.weight.numel()) if pruned else 1
+
+        return self.size*self.size*W*H*self.inch*self.ch*2*ratio + W*H*self.ch*4, W, H
 
 class ConvPool(nn.Module):
     def __init__(self, inplanes, planes):
@@ -91,6 +165,10 @@ class ConvPoolSimple(nn.Module):
 class upSampleTransposeConv(nn.Module):
     def __init__(self, inplanes, planes):
         super(upSampleTransposeConv, self).__init__()
+        self.stride = 2
+        self.size = 3
+        self.inch = inplanes
+        self.ch = planes
         self.relu = nn.ReLU()
         self.conv = nn.ConvTranspose2d(inplanes, planes, kernel_size=3,
                               padding=1, stride=2, output_padding=1, bias=True)
@@ -101,6 +179,14 @@ class upSampleTransposeConv(nn.Module):
         x = self.bn(x)
         x = self.relu(x)
         return x
+
+    def getComp(self,W,H, pruned):
+        W = W * self.stride
+        H = H * self.stride
+
+        ratio = float(self.conv.weight.nonzero().size(0)) / float(self.conv.weight.numel()) if pruned else 1
+
+        return self.size*self.size*W*H*self.inch*self.ch*2*ratio + W*H*self.ch*4, W, H
 
 class DownSampler(nn.Module):
     def __init__(self,planes, noScale):
@@ -128,6 +214,12 @@ class DownSampler(nn.Module):
         x4 = self.conv8(self.conv7(self.conv6(self.conv5(self.conv4(self.conv3(x3)))))) if self.noScale else None
 
         return x4, x3, x2, x1, x0
+
+    def __getitem__(self, item):
+        if item == 0:
+            return self.conv0
+        else:
+            return nn.Module()
 
 
 class DownSamplerThick(nn.Module):
@@ -165,11 +257,12 @@ class Classifier(nn.Module):
         return self.classifier(x)
 
 class PB_FCN(nn.Module):
-    def __init__(self,planes, num_classes,kernelSize, noScale, classify):
+    def __init__(self,planes, num_classes, kernelSize, noScale, classify):
         super(PB_FCN, self).__init__()
 
         self.noScale = noScale
         self.classify = classify
+        self.img_shape = (240,320) if self.noScale else (120,160)
 
         muliplier = 2 if noScale else 1
         outPlanes = planes//4
@@ -230,6 +323,10 @@ class FCN(nn.Module):
 class ConvSep(nn.Module):
     def __init__(self, inplanes, planes, size, stride=1):
         super(ConvSep, self).__init__()
+        self.stride = stride
+        self.size = size
+        self.inch = inplanes
+        self.ch = planes
         dilation = 1 if stride > 1 else 2
         padding = size//2 + dilation - 1
         self.conv_nx1 = nn.Conv2d(inplanes, planes//2, dilation=dilation, kernel_size=(size,1), padding=(padding,0), stride=stride, bias=False)
@@ -241,6 +338,17 @@ class ConvSep(nn.Module):
     def forward(self, x):
         x = F.relu(self.bn1(torch.cat([self.conv_nx1(x),self.conv_1xn(x)],1)))
         return F.relu(self.bn2(self.conv_1x1(x)))
+
+    def getComp(self,W,H,pruned):
+        W = W // self.stride
+        H = H // self.stride
+
+        ratio_nx1 = float(self.conv_nx1.weight.nonzero().size(0)) / float(self.conv_nx1.weight.numel()) if pruned else 1
+        ratio_1xn = float(self.conv_1xn.weight.nonzero().size(0)) / float(self.conv_1xn.weight.numel()) if pruned else 1
+        ratio_1x1 = float(self.conv_1x1.weight.nonzero().size(0)) / float(self.conv_1x1.weight.numel()) if pruned else 1
+
+        return self.size*W*H*self.inch*self.ch*2*(ratio_1xn+ratio_nx1) + W*H*self.ch*self.ch*2*ratio_1x1\
+               + W*H*self.ch*8, W, H
 
 class trConvSep(nn.Module):
     def __init__(self, inplanes, planes):
@@ -259,14 +367,16 @@ class trConvSep(nn.Module):
         return x
 
 class LevelDown(nn.Module):
-    def __init__(self, inplanes, planes, levels, doPool):
+    def __init__(self, inplanes, planes, levels, doPool, v2):
         super(LevelDown,self).__init__()
 
+        module = ConvSep if v2 else Conv
+
         self.layers = nn.Sequential()
-        self.layers.add_module("Conv0", ConvSep(inplanes,planes,3,stride=(2 if doPool else 1)))
+        self.layers.add_module("Conv0", module(inplanes,planes,3,stride=(2 if doPool else 1)))
 
         for i in range(levels-1):
-            self.layers.add_module(("Conv%d"%(i+1)), ConvSep(planes,planes,3))
+            self.layers.add_module(("Conv%d"%(i+1)), module(planes,planes,3))
 
     def forward(self, x):
         return self.layers(x)
@@ -289,6 +399,7 @@ class PB_FCN_2(nn.Module):
         super(PB_FCN_2,self).__init__()
 
         self.classify = classify
+        self.img_shape = (120,160)
 
         maxDepth = planes*pow(2,depth-1)
 
@@ -327,6 +438,75 @@ class PB_FCN_2(nn.Module):
             up = layer(up) + downs[-(i+2)]
 
         return self.segmenter(up)
+
+class ROBO_Seg(nn.Module):
+    def __init__(self, v2, noScale = False, planes=8, nClass=5, depth=4, levels=2, bellySize=5, bellyPlanes=128):
+        super(ROBO_Seg,self).__init__()
+
+        self.numClass = nClass
+        self.planes = planes
+        self.img_shape = (240,320) if noScale else (120,160)
+        if noScale:
+            depth += 1
+
+        maxDepth = planes*pow(2,depth-1)
+
+        self.downPart = nn.ModuleList()
+        self.downPart.add_module("Level0",LevelDown(3,planes,1,False,v2))
+        for i in range(depth-1):
+            nCh = planes*pow(2,i)
+            self.downPart.add_module(("Level%d"%(i+1)),LevelDown(nCh,nCh*2,levels,True,v2))
+
+        self.PB = nn.Sequential()
+        self.PB.add_module("PB_1",LevelDown(maxDepth,bellyPlanes,bellySize-1,False,v2))
+        self.PB.add_module("PB_2",LevelDown(bellyPlanes,maxDepth,1,False,v2))
+
+        self.upPart = nn.ModuleList()
+        for i in range(depth-1):
+            nCh = planes*pow(2,depth-1-i)
+            self.upPart.add_module(("Up%d"%i),upSampleTransposeConv(nCh,nCh//2))
+            #self.upPart.add_module(("Up%d" % i), trConvSep(nCh, nCh // 2))
+
+        self.segmenter = UltClassifier(planes,nClass,False)
+
+    def forward(self, x):
+
+        downs = [x]
+        for i,layer in enumerate(self.downPart):
+            downs.append(layer(downs[-1]))
+
+        downs[-1] = self.PB(downs[-1])
+
+        up = downs[-1]
+        for i,layer in enumerate(self.upPart):
+            up = layer(up) + downs[-(i+2)]
+
+        return self.segmenter(up)
+
+    def get_computations(self,pruned = False):
+        H, W = self.img_shape
+        computations = []
+
+        for part in self.downPart:
+            for module in part.layers:
+                if module is not None:
+                    comp, W, H = module.getComp(W,H,pruned)
+                    computations.append(comp)
+
+        for part in self.PB:
+            for module in part.layers:
+                if module is not None:
+                    comp, W, H = module.getComp(W,H,pruned)
+                    computations.append(comp)
+
+        for module in self.upPart:
+                if module is not None:
+                    comp, W, H = module.getComp(W,H,pruned)
+                    computations.append(comp)
+
+        computations.append(self.img_shape[0]*self.img_shape[1]*self.numClass*self.planes*2)
+
+        return computations
 
 class LabelProp(nn.Module):
     def __init__(self,numClass, numPlanes,dropout):

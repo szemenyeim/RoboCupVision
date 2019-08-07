@@ -1,5 +1,6 @@
 import os
 import re
+import glob
 import sys
 import time
 import random
@@ -21,8 +22,8 @@ class DataSetExtractor():
     def __init__(self, pathToGroundTruth):
         self.pathToGroundTruth = pathToGroundTruth
 
-        self.maskNames = sorted(self.__loadFileNames(pathToGroundTruth, ".txt"), key=numericalSort)
-        self.legendFileName = self.__loadFileNames(pathToGroundTruth, ".leg")
+        self.maskNames = sorted(glob.glob1(pathToGroundTruth, "*.txt"), key=numericalSort)
+        self.legendFileName = glob.glob1(pathToGroundTruth, "*.leg")
 
         self.labelDict = self.__loadLabelConfig()
         self.legendDict = self.__readLegendFile()
@@ -47,7 +48,7 @@ class DataSetExtractor():
             img = Image.fromarray(maskArr)
             # Save image
             name = self.maskNames[i].split(".")[0]
-            img.save("../UERoboCup/SyntheticRoboCupDataset/Sequence/labels/" + name + ".png")
+            img.save("E:/RoboCup/val/labels/" + name + ".png")
             #img = Colorize(torch.from_numpy(np.array(img, np.int32, copy=False)))
             #Image.fromarray(img.permute(1,2,0).numpy()).show()
             print(i)
@@ -57,7 +58,7 @@ class DataSetExtractor():
         Reads LabelConfig.txt to dictionary
         """
         labelDict = {}
-        with open("./LabelConfig.txt") as file:
+        with open(self.pathToGroundTruth + "LabelConfig.cfg") as file:
             data = file.readlines()
             data = [x.replace("\n","") for x in data]
             data = [x.split(":") for x in data]
@@ -159,5 +160,5 @@ class DataSetExtractor():
         currTag = self.__getTag(key)
         return(int(self.labelDict[currTag]))
 
-dataSetExtractor = DataSetExtractor("../UERoboCup/SyntheticRoboCupDataset/Sequence/masks/")
+dataSetExtractor = DataSetExtractor("E:/RoboCup/YOLOBU/Masks/Test/")
 dataSetExtractor.extractDataSet()

@@ -7,9 +7,30 @@ import numpy as np
 import random
 import re
 import os
-import pickle
-from scipy.optimize import linear_sum_assignment
-from scipy.spatial.distance import cdist
+import torchvision.transforms as transforms
+import torchvision.transforms.functional as F
+
+class ColorJitter(object):
+    def __init__(self,b=0.3,c=0.3,s=0.3,h=3.1415/6):
+        super(ColorJitter,self).__init__()
+        self.b = b
+        self.c = c
+        self.s = s
+        self.h = h
+
+    def __call__(self, img):
+        b_val = random.uniform(-self.b,self.b)
+        c_val = random.uniform(1-self.c,1+self.c)
+        s_val = random.uniform(1-self.s,1+self.s)
+        h_val = random.uniform(-self.h,self.h)
+
+        mtx = torch.FloatTensor([[s_val*np.cos(h_val),-np.sin(h_val)],[np.sin(h_val),s_val*np.cos(h_val)]])
+
+        img[0] = (img[0]+b_val)*c_val
+        if self.s > 0 and self.h > 0:
+            img[1:] = torch.einsum('nm,mbc->nbc',mtx,img[1:])
+
+        return img
 
 def tryint(s):
     try:
@@ -30,6 +51,74 @@ def get_immediate_subdirectories(a_dir):
     return [name for name in os.listdir(a_dir)
             if os.path.isdir(os.path.join(a_dir, name))]
 
+class SSYUVDataset(data.Dataset):
+    def __init__(self, data_dir, img_size=(120,160), train=True, finetune = False,camera = "both"):
+        self.img_shape = img_size
+        self.train = train
+        self.finetune = finetune
+        self.img_size = img_size
+        self.jitter = ColorJitter(0.3,0.3,0.3,3.1415/6)
+        self.resize = transforms.Resize(img_size)
+        self.labResize = transforms.Resize(img_size,Image.NEAREST)
+        self.mean = [0.36224657, 0.41139355, 0.28278301] if finetune else [0.4637419, 0.47166784, 0.48316576]
+        self.std = [0.3132638, 0.21061972, 0.34144647] if finetune else [0.45211827, 0.16890674, 0.18645908]
+        self.normalize = transforms.Normalize(mean=self.mean,std=self.std)
+        self.images =[]
+        self.labels =[]
+
+        if finetune:
+            data_dir = osp.join(data_dir,"FintuneHorizon")
+
+        data_dir = osp.join(data_dir,"train" if train else "val")
+        self.img_dir = osp.join(data_dir, "images")
+        self.lab_dir = osp.join(data_dir, "labels")
+
+        imgFiles = sorted(glob.glob1(self.img_dir, "*.png"), key=alphanum_key)
+        txtFiles = sorted(glob.glob1(self.img_dir, "*.txt"), key=alphanum_key)
+        labFiles = sorted(glob.glob1(self.lab_dir, "*.png"), key=alphanum_key)
+
+        if len(txtFiles) == len(imgFiles):
+            for img, lab, txt in zip(imgFiles, labFiles, txtFiles):
+                char = open(osp.join(self.img_dir, txt)).read()
+                condition = (camera == "both") or ((camera == "top") and (char == "u")) or (
+                            (camera == "bottom") and (char == "b"))
+                if condition:
+                    self.images.append(img)
+                    self.labels.append(lab)
+        else:
+            for img, lab in zip(imgFiles, labFiles):
+                self.images.append(img)
+                self.labels.append(lab)
+
+    def __len__(self):
+        return len(self.images)
+
+    def __getitem__(self, index):
+
+        #---------
+        #  Image
+        #---------
+        img_file = osp.join(self.img_dir, self.images[index])
+        lab_file = osp.join(self.lab_dir, self.labels[index])
+
+        img = Image.open(img_file)
+        label = Image.open(lab_file).convert('I')
+
+        if self.img_size != img.size:
+            img = self.resize(img)
+            label = self.labResize(label)
+
+        img = transforms.functional.to_tensor(img)
+        label = transforms.functional.to_tensor(label)
+        img = self.normalize(img)
+        if self.train:
+            p = torch.rand(1).item()
+            if p > 0.5:
+                img = img.flip(2)
+                label = label.flip(2)
+            img = self.jitter(img)
+
+        return img, label.squeeze()
 
 class SSDataSet(data.Dataset):
     def __init__(self, root, split="train", camera = "both", img_transform=None, label_transform=None):
