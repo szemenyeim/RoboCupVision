@@ -144,9 +144,10 @@ def valid():
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--finetune", help="Finetuning", action="store_true", default=True)
-    parser.add_argument("--noScale", help="Use VGA resolution", action="store_true", default=True)
+    parser.add_argument("--finetune", help="Finetuning", action="store_true", default=False)
+    parser.add_argument("--noScale", help="Use VGA resolution", action="store_true", default=False)
     parser.add_argument("--v2", help="Use PB-FCNv2", action="store_true", default=False)
+    parser.add_argument("--FCN", help="Use Vanilla FCN", action="store_true", default=False)
     parser.add_argument("--useDice", help="Use Dice Loss", action="store_true", default=False)
     parser.add_argument("--noBall", help="Treat Ball as Background", action="store_true")
     parser.add_argument("--noGoal", help="Treat Goal as Background", action="store_true")
@@ -160,6 +161,7 @@ if __name__ == '__main__':
     finetune = opt.finetune
     noScale = opt.noScale
     v2 = opt.v2
+    fcn = opt.FCN
     nb = opt.noBall
     ng = opt.noGoal
     nr = opt.noRobot
@@ -170,6 +172,7 @@ if __name__ == '__main__':
     fineTuneStr = "Finetune" if finetune else ""
     scaleStr = "VGA" if noScale else ""
     v2Str = "v2" if v2 else ""
+    fcnStr = "FCN" if fcn else ""
     nbStr = "NoBall" if nb else ""
     ngStr = "NoGoal" if ng else ""
     nrStr = "NoRobot" if nr else ""
@@ -177,9 +180,9 @@ if __name__ == '__main__':
     cameraString = "" if tc == bc else ("top" if tc else "bottom")
     cameraSaveStr = cameraString if finetune else ""
     scale = 2 if noScale else 4
-    labSize = (480.0/scale, 640.0/scale)
+    labSize = (480//scale, 640//scale)
 
-    name = "checkpoints/best%s%s%s%s%s%s%s%s" % (fineTuneStr,scaleStr,v2Str,nbStr,ngStr,nrStr,nlStr,cameraSaveStr)
+    name = "checkpoints/best%s%s%s%s%s%s%s%s%s" % (fineTuneStr,scaleStr,v2Str,fcnStr,nbStr,ngStr,nrStr,nlStr,cameraSaveStr)
 
     weights_path = []
     if opt.transfer:
@@ -191,6 +194,8 @@ if __name__ == '__main__':
         weights_path = [path for path in weights_path if "VGA" not in path]
     if not v2:
         weights_path = [path for path in weights_path if "v2" not in path]
+    if not fcn:
+        weights_path = [path for path in weights_path if "FCN" not in path]
     if not nb:
         weights_path = [path for path in weights_path if "NoBall" not in path]
     if not ng:
@@ -220,32 +225,19 @@ if __name__ == '__main__':
     Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
     LongTensor = torch.cuda.LongTensor if cuda else torch.LongTensor
 
-    input_transform = Compose([
-        Scale(scale, Image.BILINEAR),
-        ToYUV(),
-        ToTensor(),
-        Normalize(mean, std),
-
-    ])
-    target_transform = Compose([
-        Scale(scale, Image.NEAREST),
-        ToTensor(),
-        ToLabel(),
-    ])
-
     batchSize = 16 if (finetune or noScale) else 64
 
     root = "../data" if sys.platform != 'win32' else "E:/RoboCup"
-    if finetune:
-        root += "/FinetuneHorizon"
 
-    valloader = data.DataLoader(SSDataSet(root, split="val", camera=cameraString, img_transform=input_transform,
-                                          label_transform=target_transform),
-                                batch_size=batchSize, shuffle=True, num_workers=4)
+    valloader = data.DataLoader(SSYUVDataset(root, img_size=labSize, train=False, finetune=finetune, camera=cameraString),
+        batch_size=batchSize, shuffle=True, num_workers=5)
 
     numClass = 5 - nb - ng - nr - nl
-    numPlanes = 32
-    kernelSize = 1
+    numPlanes = 8
+    levels = 3 if fcn else 2
+    depth = 4
+    bellySize = 0 if fcn else 5
+    bellyPlanes = numPlanes * pow(2, depth)
 
     weights = Tensor([1, 2, 6, 3, 2]) if opt.useDice else Tensor([1, 10, 30, 5, 2])
     if finetune:
@@ -265,7 +257,7 @@ if __name__ == '__main__':
             print("######################################################")
 
             # Initiate model
-            model = ROBO_Seg(v2,noScale)
+            model = ROBO_Seg(v2,noScale,planes=numPlanes,depth=depth,levels=levels,bellySize=bellySize,bellyPlanes=bellyPlanes)
             model.load_state_dict(torch.load(w_path))
             comp = model.get_computations(True)
             print(comp)

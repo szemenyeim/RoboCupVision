@@ -223,17 +223,17 @@ class DownSampler(nn.Module):
 
 
 class DownSamplerThick(nn.Module):
-    def __init__(self, planes, dropout):
+    def __init__(self, planes):
         super(DownSamplerThick, self).__init__()
-        outPlanes = planes / 2
+        outPlanes = planes // 2
 
-        self.conv0 = ConvPoolSimple(3, outPlanes, 3, 1, 2, 2, False, dropout)
-        self.conv0_1 = ConvPoolSimple(outPlanes, outPlanes, 3, 1, 2, 2, False, dropout)
-        self.conv1 = ConvPoolSimple(outPlanes, outPlanes, 3, 2, 1, 1, False, dropout)
-        self.conv2 = ConvPoolDouble(outPlanes, planes, dropout)
-        self.conv3 = ConvPoolDouble(planes, planes * 2, dropout)
-        self.conv4 = ConvPoolSimple(planes * 2, planes * 4, 3, 1, 2, 2, False, dropout * 2)
-        self.conv5 = ConvPoolSimple(planes * 4, planes * 2, 3, 1, 2, 2, False, dropout * 2)
+        self.conv0 = ConvPoolSimple(3, outPlanes, 3, 1, 2, 2, False)
+        self.conv0_1 = ConvPoolSimple(outPlanes, outPlanes, 3, 1, 2, 2, False)
+        self.conv1 = ConvPoolSimple(outPlanes, outPlanes, 3, 2, 1, 1, False)
+        self.conv2 = ConvPoolDouble(outPlanes, planes)
+        self.conv3 = ConvPoolDouble(planes, planes * 2)
+        self.conv4 = ConvPoolSimple(planes * 2, planes * 4, 3, 1, 2, 2, False)
+        self.conv5 = ConvPoolSimple(planes * 4, planes * 2, 3, 1, 2, 2, False)
 
     def forward(self, x):
         x0 = self.conv0_1(self.conv0(x))
@@ -304,7 +304,7 @@ class FCN(nn.Module):
 
         planes = 32
 
-        self.FCN = DownSamplerThick(32,0)
+        self.FCN = DownSamplerThick(32)
 
         self.up1 = upSampleTransposeConv(planes*2,planes)
         self.up2 = upSampleTransposeConv(planes,planes//2)
@@ -452,14 +452,15 @@ class ROBO_Seg(nn.Module):
         maxDepth = planes*pow(2,depth-1)
 
         self.downPart = nn.ModuleList()
-        self.downPart.add_module("Level0",LevelDown(3,planes,1,False,v2))
+        self.downPart.add_module("Level0",LevelDown(3,planes,levels-1,False,v2))
         for i in range(depth-1):
             nCh = planes*pow(2,i)
             self.downPart.add_module(("Level%d"%(i+1)),LevelDown(nCh,nCh*2,levels,True,v2))
 
         self.PB = nn.Sequential()
-        self.PB.add_module("PB_1",LevelDown(maxDepth,bellyPlanes,bellySize-1,False,v2))
-        self.PB.add_module("PB_2",LevelDown(bellyPlanes,maxDepth,1,False,v2))
+        if bellySize > 0:
+            self.PB.add_module("PB_1",LevelDown(maxDepth,bellyPlanes,bellySize-1,False,v2))
+            self.PB.add_module("PB_2",LevelDown(bellyPlanes,maxDepth,1,False,v2))
 
         self.upPart = nn.ModuleList()
         for i in range(depth-1):
@@ -475,7 +476,8 @@ class ROBO_Seg(nn.Module):
         for i,layer in enumerate(self.downPart):
             downs.append(layer(downs[-1]))
 
-        downs[-1] = self.PB(downs[-1])
+        if len(self.PB) > 0:
+            downs[-1] = self.PB(downs[-1])
 
         up = downs[-1]
         for i,layer in enumerate(self.upPart):
