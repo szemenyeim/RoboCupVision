@@ -27,30 +27,58 @@ def l1reg(model):
         regularization_loss += torch.sum(torch.abs(param))
     return regularization_loss
 
-def getPrecRecall(maskPred,maskTarget):
+def getPrecRecall(maskPred,maskTarget, thresh, distanceThresh):
 
-    recall =0
-    prec = 0
+    recallI =0
+    precI = 0
+    recallD =0
+    precD = 0
     nClass,bSize = maskPred.shape[0:2]
 
-    for c in range(nClass):
+    for c in range(1,nClass):
         for b in range(bSize):
             imgPred = maskPred[c,b,:].cpu().numpy().astype('uint8')
             imgTar = maskTarget[c,b,:].cpu().numpy().astype('uint8')
 
-            nPred,_ = cv2.connectedComponents(imgPred)
-            nTrue,_ = cv2.connectedComponents(imgTar)
+            nPred,predLab = cv2.connectedComponents(imgPred)
+            nTrue,tarLab = cv2.connectedComponents(imgTar)
+            nPred -=1
+            nTrue -=1
 
-            if nPred > nTrue:
-                recall += 1
-                prec += nTrue/nPred
-            else:
-                prec += 1
-                recall += nPred/nTrue if nTrue != 0 else 1
+            nCorrI = 0
+            nCorrD = 0
 
-    prec /= nClass
-    recall /= nClass
-    return prec,recall
+            for i in range(nPred):
+                pred = (predLab == (i+1))
+                predBox = cv2.boundingRect(pred.astype('uint8'))
+                predCent = (predBox[0]+predBox[2]*2,predBox[1]+predBox[3]/2)
+
+                foundI = False
+                foundD = False
+
+                for j in range(nTrue):
+                    tar = (tarLab == (j+1))
+                    tarBox = cv2.boundingRect(tar.astype('uint8'))
+                    tarCent = (tarBox[0]+tarBox[2]*2,tarBox[1]+tarBox[3]/2)
+                    dist = np.sqrt((predCent[0]-tarCent[0])**2+(predCent[1]-tarCent[1])**2)
+                    Iou = (pred & tar).sum() / (pred | tar).sum()
+                    if Iou > thresh and not foundI:
+                        nCorrI += 1
+                        foundI = True
+                    if distanceThresh > dist and not foundD:
+                        nCorrD += 1
+                        foundD = True
+
+            precI += nCorrI/nPred if nPred != 0 else 1
+            recallI += nCorrI/nTrue if nTrue != 0 else 1
+            precD += nCorrD/nPred if nPred != 0 else 1
+            recallD += nCorrD/nTrue if nTrue != 0 else 1
+
+    precI /= (nClass-1)
+    recallI /= (nClass-1)
+    precD /= (nClass-1)
+    recallD /= (nClass-1)
+    return (precI+recallI)/2,(precD+recallD)/2
 
 def valid():
     #############
@@ -66,8 +94,7 @@ def valid():
     IoU = torch.zeros(numClass)
     labCnts = torch.zeros(numClass)
 
-    recall = 0
-    precision = 0
+    recPrec = np.zeros((2,5))
 
     bar = progressbar.ProgressBar(0, len(valloader), redirect_stdout=False)
 
@@ -107,14 +134,14 @@ def valid():
                         else:
                             IoU[labIdx] += inter / union
 
-        p,r = getPrecRecall(maskPred,maskTarget)
-        precision += p
-        recall += r
+        for i,(thresh,dThresh) in enumerate(zip(thresholds,dThresholds)):
+            valI,valD = getPrecRecall(maskPred,maskTarget,thresh,dThresh)
+            recPrec[0,i] += valI
+            recPrec[1,i] += valD
 
     bar.finish()
     prune = count_zero_weights(model)
-    precision /= imgCnt
-    recall /= imgCnt
+    recPrec /= imgCnt
     for labIdx in range(numClass):
         for predIdx in range(numClass):
             conf[(predIdx, labIdx)] /= (labCnts[labIdx] / 100.0)
@@ -124,7 +151,7 @@ def valid():
         meanClassAcc += conf[(j, j)] / numClass
     currLoss = (meanClassAcc+meanIoU)/2
     print(
-        "[Validate][Losses: pruned %f, total %f, avg: %f][Pixel Acc: %f, Mean Class Acc: %f, Mean IoU: %f, Precision: %f, Recall: %f]"
+        "[Validate][Losses: pruned %f, total %f, avg: %f][Pixel Acc: %f, Mean Class Acc: %f, Mean IoU: %f]"
         % (
             prune,
             losstotal / float(len(valloader)),
@@ -132,12 +159,12 @@ def valid():
             running_acc / (imgCnt),
             meanClassAcc,
             meanIoU,
-            precision,
-            recall
         )
     )
 
-    print(conf)
+    print("Avgs:")
+
+    print(recPrec)
 
     return
 
@@ -182,6 +209,11 @@ if __name__ == '__main__':
     scale = 2 if noScale else 4
     labSize = (480//scale, 640//scale)
 
+    thresholds = [0.75, 0.5, 0.25, 0.1, 0.05]
+    dThresholds = [1.25, 2.5, 5, 10, 20]
+    if noScale:
+        dThresholds = [d*2 for d in dThresholds]
+
     name = "checkpoints/best%s%s%s%s%s%s%s%s%s" % (fineTuneStr,scaleStr,v2Str,fcnStr,nbStr,ngStr,nrStr,nlStr,cameraSaveStr)
 
     weights_path = []
@@ -212,9 +244,6 @@ if __name__ == '__main__':
     if cameraString != "both" and not finetune:
         print("You can only select camera images for the finetune dataset. Using both cameras by default")
         cameraString = "both"
-
-    mean = [0.5, 0.0, 0.0] if not finetune else [0.5, 0.0, 0.0]
-    std = [0.25, 0.25, 0.25] if not finetune  else [0.25, 0.25, 0.25]
 
     n_cpu = 4
     batch_size = 64

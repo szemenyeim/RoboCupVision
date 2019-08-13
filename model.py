@@ -181,12 +181,9 @@ class upSampleTransposeConv(nn.Module):
         return x
 
     def getComp(self,W,H, pruned):
-        W = W * self.stride
-        H = H * self.stride
-
         ratio = float(self.conv.weight.nonzero().size(0)) / float(self.conv.weight.numel()) if pruned else 1
 
-        return self.size*self.size*W*H*self.inch*self.ch*2*ratio + W*H*self.ch*4, W, H
+        return self.size*self.size*W*H*self.inch*self.ch*2*ratio + W*H*self.ch*4, W * self.stride, H * self.stride
 
 class DownSampler(nn.Module):
     def __init__(self,planes, noScale):

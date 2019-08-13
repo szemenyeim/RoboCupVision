@@ -225,7 +225,7 @@ if __name__ == '__main__':
     dec = opt.decay if finetune else opt.decay/10
     transfers = [1, 2, 3, 4] if opt.transfer else [0]
     decays = [5e-4, 2.5e-4, 1e-4, 5e-5] if (finetune and not opt.transfer) else [dec]
-    if opt.v2:
+    if opt.v2 or opt.FCN:
         decays = [decay*2 for decay in decays]
     noScale = opt.noScale
     v2 = opt.v2
@@ -263,9 +263,6 @@ if __name__ == '__main__':
         print("You can only select camera images for the finetune dataset. Using both cameras by default")
         cameraString = "both"
 
-    mean = [0.5, 0.0, 0.0] if not finetune else [0.5, 0.0, 0.0]
-    std = [0.25, 0.25, 0.25] if not finetune  else [0.25, 0.25, 0.25]
-
     n_cpu = 4
     channels = 3
     epochs = 100 if noScale or not finetune else 200
@@ -302,7 +299,7 @@ if __name__ == '__main__':
                                 batch_size=batchSize, shuffle=True, num_workers=5)
 
     numClass = 5 - nb - ng - nr - nl
-    numPlanes = 8
+    numPlanes = 8 if fcn else 8
     levels = 3 if fcn else 2
     depth = 4
     bellySize = 0 if fcn else 5
