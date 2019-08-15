@@ -206,7 +206,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--finetune", help="Finetuning", action="store_true", default=False)
     parser.add_argument("--noScale", help="Use VGA resolution", action="store_true", default=False)
-    parser.add_argument("--UNet", help="Use Vanilla U-Net", action="store_true", default=True)
+    parser.add_argument("--UNet", help="Use Vanilla U-Net", action="store_true", default=False)
     parser.add_argument("--useDice", help="Use Dice Loss", action="store_true", default=False)
     parser.add_argument("--noBall", help="Treat Ball as Background", action="store_true")
     parser.add_argument("--noGoal", help="Treat Goal as Background", action="store_true")
@@ -224,8 +224,8 @@ if __name__ == '__main__':
     dec = opt.decay if finetune else opt.decay/10
     transfers = [1, 2, 3, 4] if opt.transfer else [0]
     decays = [10*dec, 5*dec, 2*dec, dec] if (finetune and not opt.transfer) else [dec]
-    if opt.UNet:
-        decays = [d*2 for d in decays]
+    '''if opt.UNet:
+        decays = [d*2 for d in decays]'''
     noScale = opt.noScale
     unet = opt.UNet
     nb = opt.noBall
@@ -329,7 +329,7 @@ if __name__ == '__main__':
                 torch.cuda.manual_seed(12345678)
 
             # Initiate model
-            model = ROBO_UNet(noScale,planes=numPlanes,depth=depth,levels=levels,bellySize=bellySize,bellyPlanes=bellyPlanes)
+            model = ROBO_UNet(noScale,planes=numPlanes,depth=depth,levels=levels,bellySize=bellySize,bellyPlanes=bellyPlanes,pool=unet)
             comp = model.get_computations()
             print(comp)
             print(sum(comp))

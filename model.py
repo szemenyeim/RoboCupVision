@@ -89,6 +89,19 @@ class View(nn.Module):
     def forward(self, x):
         return x.view(-1,self.numFeat)
 
+class Pool(nn.Module):
+    def __init__(self,ch,stride=2):
+        super(Pool, self).__init__()
+        self.ch = ch
+        self.stride = stride
+        self.pool = nn.MaxPool2d(stride,stride)
+
+    def forward(self, x):
+        return self.pool(x)
+
+    def getComp(self,W,H,pruned):
+        return W*H*self.ch,W // self.stride,H // self.stride
+
 class Conv(nn.Module):
     def __init__(self, inplanes, planes, size, stride=1):
         super(Conv, self).__init__()
@@ -370,10 +383,19 @@ class LevelDown(nn.Module):
         module = Conv
 
         self.layers = nn.Sequential()
-        self.layers.add_module("Conv0", module(inplanes,planes,3,stride=(2 if doPool else 1)))
 
-        for i in range(levels-1):
-            self.layers.add_module(("Conv%d"%(i+1)), module(planes,planes,3))
+        if pool:
+            if doPool:
+                self.layers.add_module("Pool", Pool(inplanes,2))
+                levels -= 1
+            self.layers.add_module("Conv0", module(inplanes,planes,3,stride=1))
+            for i in range(levels-1):
+                self.layers.add_module(("Conv%d"%(i+1)), module(planes,planes,3))
+        else:
+            self.layers.add_module("Conv0", module(inplanes,planes,3,stride=(2 if doPool else 1)))
+
+            for i in range(levels-1):
+                self.layers.add_module(("Conv%d"%(i+1)), module(planes,planes,3))
 
     def forward(self, x):
         return self.layers(x)

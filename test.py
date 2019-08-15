@@ -45,13 +45,16 @@ def getPrecRecall(maskPred,maskTarget, thresh, distanceThresh):
             nPred -=1
             nTrue -=1
 
+            usedTarI = np.zeros(nTrue)
+            usedTarD = np.zeros(nTrue)
+
             nCorrI = 0
             nCorrD = 0
 
             for i in range(nPred):
                 pred = (predLab == (i+1))
                 predBox = cv2.boundingRect(pred.astype('uint8'))
-                predCent = (predBox[0]+predBox[2]*2,predBox[1]+predBox[3]/2)
+                predCent = (predBox[0]+predBox[2]/2,predBox[1]+predBox[3]/2)
 
                 foundI = False
                 foundD = False
@@ -59,15 +62,17 @@ def getPrecRecall(maskPred,maskTarget, thresh, distanceThresh):
                 for j in range(nTrue):
                     tar = (tarLab == (j+1))
                     tarBox = cv2.boundingRect(tar.astype('uint8'))
-                    tarCent = (tarBox[0]+tarBox[2]*2,tarBox[1]+tarBox[3]/2)
+                    tarCent = (tarBox[0]+tarBox[2]/2,tarBox[1]+tarBox[3]/2)
                     dist = np.sqrt((predCent[0]-tarCent[0])**2+(predCent[1]-tarCent[1])**2)
                     Iou = (pred & tar).sum() / (pred | tar).sum()
-                    if Iou > thresh and not foundI:
+                    if Iou > thresh and not foundI and usedTarI[j] == 0:
                         nCorrI += 1
                         foundI = True
-                    if distanceThresh > dist and not foundD:
+                        usedTarI[j] = 1
+                    if distanceThresh > dist and not foundD and usedTarD[j] == 0:
                         nCorrD += 1
                         foundD = True
+                        usedTarD[j] = 1
 
             precI += nCorrI/nPred if nPred != 0 else 1
             recallI += nCorrI/nTrue if nTrue != 0 else 1
@@ -78,6 +83,7 @@ def getPrecRecall(maskPred,maskTarget, thresh, distanceThresh):
     recallI /= (nClass-1)
     precD /= (nClass-1)
     recallD /= (nClass-1)
+
     return (precI+recallI)/2,(precD+recallD)/2
 
 def valid():
@@ -162,9 +168,8 @@ def valid():
         )
     )
 
-    print("Avgs:")
-
-    print(recPrec)
+    print("IoU:",recPrec[0])
+    print("Dist:",recPrec[1])
 
     return
 
@@ -281,7 +286,7 @@ if __name__ == '__main__':
             print("######################################################")
 
             # Initiate model
-            model = ROBO_UNet(noScale,planes=numPlanes,depth=depth,levels=levels,bellySize=bellySize,bellyPlanes=bellyPlanes)
+            model = ROBO_UNet(noScale,planes=numPlanes,depth=depth,levels=levels,bellySize=bellySize,bellyPlanes=bellyPlanes,pool=unet)
             model.load_state_dict(torch.load(w_path))
             comp = model.get_computations(True)
             print(comp)

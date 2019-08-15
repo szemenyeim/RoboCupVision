@@ -103,7 +103,7 @@ if __name__ == '__main__':
     print("######################################################")
 
     # Initiate model
-    model = ROBO_UNet(noScale, planes=numPlanes, depth=depth, levels=levels, bellySize=bellySize, bellyPlanes=bellyPlanes)
+    model = ROBO_UNet(noScale, planes=numPlanes, depth=depth, levels=levels, bellySize=bellySize, bellyPlanes=bellyPlanes,pool=unet)
     model.load_state_dict(torch.load(weights_path))
     comp = model.get_computations(True)
     print(comp)
