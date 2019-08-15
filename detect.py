@@ -26,8 +26,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--finetune", help="Finetuning", action="store_true", default=False)
     parser.add_argument("--noScale", help="Use VGA resolution", action="store_true", default=False)
-    parser.add_argument("--v2", help="Use PB-FCNv2", action="store_true", default=False)
-    parser.add_argument("--FCN", help="Use Vanilla FCN", action="store_true", default=False)
+    parser.add_argument("--UNet", help="Use Vanilla U-Net", action="store_true", default=False)
     parser.add_argument("--useDice", help="Use Dice Loss", action="store_true", default=False)
     parser.add_argument("--noBall", help="Treat Ball as Background", action="store_true")
     parser.add_argument("--noGoal", help="Treat Goal as Background", action="store_true")
@@ -39,8 +38,7 @@ if __name__ == '__main__':
 
     finetune = opt.finetune
     noScale = opt.noScale
-    v2 = opt.v2
-    fcn = opt.FCN
+    unet = opt.UNet
     nb = opt.noBall
     ng = opt.noGoal
     nr = opt.noRobot
@@ -50,8 +48,7 @@ if __name__ == '__main__':
 
     fineTuneStr = "Finetune" if finetune else ""
     scaleStr = "VGA" if noScale else ""
-    v2Str = "v2" if v2 else ""
-    fcnStr = "FCN" if fcn else ""
+    unetStr = "UNet" if unet else ""
     nbStr = "NoBall" if nb else ""
     ngStr = "NoGoal" if ng else ""
     nrStr = "NoRobot" if nr else ""
@@ -66,8 +63,7 @@ if __name__ == '__main__':
     if noScale:
         dThresholds = [d * 2 for d in dThresholds]
 
-    name = "checkpoints/best%s%s%s%s%s%s%s%s%s" % (
-    fineTuneStr, scaleStr, v2Str, fcnStr, nbStr, ngStr, nrStr, nlStr, cameraSaveStr)
+    name = "checkpoints/best%s%s%s%s%s%s%s%s" % (fineTuneStr, scaleStr, unetStr, nbStr, ngStr, nrStr, nlStr, cameraSaveStr)
 
     weights_path = name + ".weights"
 
@@ -94,10 +90,10 @@ if __name__ == '__main__':
         batch_size=batchSize, shuffle=False, num_workers=5)
 
     numClass = 5 - nb - ng - nr - nl
-    numPlanes = 8
-    levels = 3 if fcn else 2
+    numPlanes = 8 if unet else 8
+    levels = 3 if unet else 2
     depth = 4
-    bellySize = 0 if fcn else 5
+    bellySize = 0 if unet else 5
     bellyPlanes = numPlanes * pow(2, depth)
 
     mapLoc = None if cuda else {'cuda:0': 'cpu'}
@@ -107,8 +103,7 @@ if __name__ == '__main__':
     print("######################################################")
 
     # Initiate model
-    model = ROBO_Seg(v2, noScale, planes=numPlanes, depth=depth, levels=levels, bellySize=bellySize,
-                     bellyPlanes=bellyPlanes)
+    model = ROBO_UNet(noScale, planes=numPlanes, depth=depth, levels=levels, bellySize=bellySize, bellyPlanes=bellyPlanes)
     model.load_state_dict(torch.load(weights_path))
     comp = model.get_computations(True)
     print(comp)

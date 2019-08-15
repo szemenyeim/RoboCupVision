@@ -38,9 +38,6 @@ def train(epoch,epochs,bestLoss,indices = None):
 
     model.train()
 
-    if indices is None:
-        scheduler.step()
-
     bar = progressbar.ProgressBar(0, len(trainloader), redirect_stdout=False)
 
     for batch_i, (imgs, targets) in enumerate(trainloader):
@@ -90,6 +87,9 @@ def train(epoch,epochs,bestLoss,indices = None):
             running_acc/(imgCnt),
         )
     )
+
+    if indices is None:
+        scheduler.step()
 
     return bestLoss
 
@@ -179,8 +179,8 @@ def valid(epoch,epochs,bestLoss,pruned):
 
     name = "bestFinetune" if finetune else "best"
     name += scaleStr
-    name += v2Str
-    name += fcnStr
+
+    name += unetStr
     name += nbStr
     name += ngStr
     name += nrStr
@@ -206,8 +206,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--finetune", help="Finetuning", action="store_true", default=False)
     parser.add_argument("--noScale", help="Use VGA resolution", action="store_true", default=False)
-    parser.add_argument("--v2", help="Use PB-FCNv2", action="store_true", default=False)
-    parser.add_argument("--FCN", help="Use Vanilla FCN", action="store_true", default=False)
+    parser.add_argument("--UNet", help="Use Vanilla U-Net", action="store_true", default=True)
     parser.add_argument("--useDice", help="Use Dice Loss", action="store_true", default=False)
     parser.add_argument("--noBall", help="Treat Ball as Background", action="store_true")
     parser.add_argument("--noGoal", help="Treat Goal as Background", action="store_true")
@@ -224,12 +223,11 @@ if __name__ == '__main__':
     learning_rate = opt.lr#*2 if finetune and not opt.transfer else opt.lr
     dec = opt.decay if finetune else opt.decay/10
     transfers = [1, 2, 3, 4] if opt.transfer else [0]
-    decays = [5e-4, 2.5e-4, 1e-4, 5e-5] if (finetune and not opt.transfer) else [dec]
-    if opt.v2 or opt.FCN:
-        decays = [decay*2 for decay in decays]
+    decays = [10*dec, 5*dec, 2*dec, dec] if (finetune and not opt.transfer) else [dec]
+    if opt.UNet:
+        decays = [d*2 for d in decays]
     noScale = opt.noScale
-    v2 = opt.v2
-    fcn = opt.FCN
+    unet = opt.UNet
     nb = opt.noBall
     ng = opt.noGoal
     nr = opt.noRobot
@@ -237,11 +235,9 @@ if __name__ == '__main__':
     tc = opt.topCam
     bc = opt.bottomCam
 
-
     fineTuneStr = "Finetuned" if finetune else ""
     scaleStr = "VGA" if noScale else ""
-    v2Str = "v2" if v2 else ""
-    fcnStr = "FCN" if fcn else ""
+    unetStr = "UNet" if unet else ""
     nbStr = "NoBall" if nb else ""
     ngStr = "NoGoal" if ng else ""
     nrStr = "NoRobot" if nr else ""
@@ -253,7 +249,7 @@ if __name__ == '__main__':
     scale = 2 if noScale else 4
     labSize = (480//scale, 640//scale)
 
-    weights_path = "checkpoints/best%s%s%s%s%s%s%s%s.weights" % (scaleStr,v2Str,fcnStr,nbStr,ngStr,nrStr,nlStr,cameraSaveStr)
+    weights_path = "checkpoints/best%s%s%s%s%s%s%s.weights" % (scaleStr,unetStr,nbStr,ngStr,nrStr,nlStr,cameraSaveStr)
 
     if nb and ng and nr and nl:
         print("You need to have at least one non-background class!")
@@ -299,10 +295,10 @@ if __name__ == '__main__':
                                 batch_size=batchSize, shuffle=True, num_workers=5)
 
     numClass = 5 - nb - ng - nr - nl
-    numPlanes = 8 if fcn else 8
-    levels = 3 if fcn else 2
-    depth = 4
-    bellySize = 0 if fcn else 5
+    numPlanes = 8 if unet else 8
+    levels = 3 if unet else 2
+    depth = 4 if unet else 4
+    bellySize = 0 if unet else 5
     bellyPlanes = numPlanes*pow(2,depth)
 
     weights = Tensor([1, 2, 6, 3, 2]) if opt.useDice else Tensor([1, 10, 30, 10, 2])
@@ -333,7 +329,7 @@ if __name__ == '__main__':
                 torch.cuda.manual_seed(12345678)
 
             # Initiate model
-            model = ROBO_Seg(v2,noScale,planes=numPlanes,depth=depth,levels=levels,bellySize=bellySize,bellyPlanes=bellyPlanes)
+            model = ROBO_UNet(noScale,planes=numPlanes,depth=depth,levels=levels,bellySize=bellySize,bellyPlanes=bellyPlanes)
             comp = model.get_computations()
             print(comp)
             print(sum(comp))
@@ -365,7 +361,7 @@ if __name__ == '__main__':
                     #bestLoss = train(epoch,epochs,bestLoss)
 
             if finetune and (transfer == 0):
-                model.load_state_dict(torch.load("checkpoints/bestFinetune%s%s%s%s%s%s%s%s.weights" % (scaleStr,v2Str,fcnStr,nbStr,ngStr,nrStr,nlStr,cameraSaveStr)))
+                model.load_state_dict(torch.load("checkpoints/bestFinetune%s%s%s%s%s%s%s.weights" % (scaleStr,unetStr,nbStr,ngStr,nrStr,nlStr,cameraSaveStr)))
                 with torch.no_grad():
                     indices = pruneModelNew(model.parameters())
 

@@ -364,10 +364,10 @@ class trConvSep(nn.Module):
         return x
 
 class LevelDown(nn.Module):
-    def __init__(self, inplanes, planes, levels, doPool, v2):
+    def __init__(self, inplanes, planes, levels, doPool, pool=False):
         super(LevelDown,self).__init__()
 
-        module = ConvSep if v2 else Conv
+        module = Conv
 
         self.layers = nn.Sequential()
         self.layers.add_module("Conv0", module(inplanes,planes,3,stride=(2 if doPool else 1)))
@@ -436,9 +436,9 @@ class PB_FCN_2(nn.Module):
 
         return self.segmenter(up)
 
-class ROBO_Seg(nn.Module):
-    def __init__(self, v2, noScale = False, planes=8, nClass=5, depth=4, levels=2, bellySize=5, bellyPlanes=128):
-        super(ROBO_Seg,self).__init__()
+class ROBO_UNet(nn.Module):
+    def __init__(self, noScale = False, planes=8, nClass=5, depth=4, levels=2, bellySize=5, bellyPlanes=128, pool=False):
+        super(ROBO_UNet,self).__init__()
 
         self.numClass = nClass
         self.planes = planes
@@ -449,15 +449,15 @@ class ROBO_Seg(nn.Module):
         maxDepth = planes*pow(2,depth-1)
 
         self.downPart = nn.ModuleList()
-        self.downPart.add_module("Level0",LevelDown(3,planes,levels-1,False,v2))
+        self.downPart.add_module("Level0",LevelDown(3,planes,levels-1,False,pool))
         for i in range(depth-1):
             nCh = planes*pow(2,i)
-            self.downPart.add_module(("Level%d"%(i+1)),LevelDown(nCh,nCh*2,levels,True,v2))
+            self.downPart.add_module(("Level%d"%(i+1)),LevelDown(nCh,nCh*2,levels,True,pool))
 
         self.PB = nn.Sequential()
         if bellySize > 0:
-            self.PB.add_module("PB_1",LevelDown(maxDepth,bellyPlanes,bellySize-1,False,v2))
-            self.PB.add_module("PB_2",LevelDown(bellyPlanes,maxDepth,1,False,v2))
+            self.PB.add_module("PB_1",LevelDown(maxDepth,bellyPlanes,bellySize-1,False))
+            self.PB.add_module("PB_2",LevelDown(bellyPlanes,maxDepth,1,False))
 
         self.upPart = nn.ModuleList()
         for i in range(depth-1):
