@@ -20,9 +20,9 @@ In order to run the code, you also need our datasets, which you can download her
 
 ## 2.Dataset and Pre-trained models
 
-You can download the datasets used for training and finetuning from [our website](http://3dmr.iit.bme.hu/research/robocup/Datasets/index.html).
+You can download the datasets used for training and finetuning from [our website](http://deeplearning.iit.bme.hu/ROBOSeg/).
 
-If you do not want to train your own models, just use our pretrained models, which you can download from the [same place](http://3dmr.iit.bme.hu/research/robocup/Datasets/index.html). Extract them into the &quot;pth&quot; folder.
+If you do not want to train your own models, just use our pretrained models, which you can download from [here](http://deeplearning.iit.bme.hu/ROBOSeg/checkpoints.zip). Extract them into the &quot;pth&quot; folder.
 
 ## 3.Training a segmentation network
 
