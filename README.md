@@ -26,50 +26,38 @@ If you do not want to train your own models, just use our pretrained models, whi
 
 ## 3.Training a segmentation network
 
-In order to train the network, you&#39;ll have to pretrain the first half on a classification set first.
-
-        python classTrainer.py
-
 The pretrain the whole segmentation network on synthetic data.
 
-        python trainer.py
+        python train.py
 
-Then finetune the network on the real dataset, and after that you can optionally prune an retrain the network.
+Then finetune the network on the real dataset, (you can use synthetic transfer learning optionally).
 
-        python trainer.py –-finetune
+        python train.py –-finetune
 
-        python trainer.py –-finetune –-prune
+        python train.py –-finetune --transfer
 
-The finetuned flag also determines if the synthetic or the real test sets are evaluated.
-
-Alternatively, you can use iterative pruning on a finetuned model:
-
-        python pruner.py
+The finetune flag also determines if the synthetic or the real test sets are evaluated.
 
 There are several further options you can use for training:
 
 - --noScale        This option will run the network on 640x480 resolution instead of 160x120
-- --v2        This option will train the network on the PB-FCNv2 architecture, which uses separated convolutions
+- --UNet        This option will train the standard U-Net architecture, instead of the ROBO-UNet proposed in our paper.
 - --topCam, --bottomCam        Use top or bottom camera images only. Providing both or neither flags will use both cameras.
 - --noBall, --noRobot, --noGoal, --noLine        Treat balls, robot, goals or lines as background. You can use any combinations of these flags, as long as there is at least one foreground class.
 
 Finally, you can generate the labeled images using the tester script. You can use the flags to select different neural network versions. Examples:
 
-        python tester.py
+        python test.py
 
-        python tester.py –-finetuned
+        python test.py –-finetune
 
-        python tester.py –-finetuned –-pruned
+        python tester.py –-finetune –-transfer
 
-        python tester.py –-finetuned –-pruned --v2 --topCam
+        python tester.py –-finetune --v2 --topCam
 
-        python tester.py –-finetuned –-pruned --v2 --bottomCam --noGoal --noRobot
+        python tester.py –-finetune --v2 --bottomCam --noGoal --noRobot
 
 There are several further options you can use for training:
-
-- --pruned2        Use pruned model produced using pruner.py (iterative pruning)
-- --dump        Export the weights for RoboDNN. The weights will get exported to the weights folder
-- --useCuda        The tester uses the CPU by default even if CUDA is available (to measure average exectuion time). This option forces the use of the GPU if available.
 
 ## 4.Training the label propagation network
 
