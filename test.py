@@ -12,7 +12,7 @@ from torch.utils import data
 import lr_scheduler
 from model import CrossEntropyLoss2d, PB_FCN, pruneModelNew, PB_FCN_2, DiceLoss
 from dataset import SSDataSet
-from transform import Scale, ToLabel, HorizontalFlip, VerticalFlip, ToYUV, maskLabel
+from transform import Scale, ToLabel, HorizontalFlip, VerticalFlip, ToYUV, maskLabel, updateLabels, optFlow
 from torchvision.transforms import Compose, Normalize, ToTensor, ColorJitter
 import torch.optim as optim
 torch.set_printoptions(precision=2,sci_mode=False)
@@ -101,10 +101,15 @@ def valid():
     labCnts = torch.zeros(numClass)
 
     recPrec = np.zeros((2,5))
+    recPrecLP = np.zeros((2,5))
 
     bar = progressbar.ProgressBar(0, len(valloader), redirect_stdout=False)
 
-    for batch_i, (imgs, targets) in enumerate(valloader):
+    for batch_i, data in enumerate(valloader):
+        if lprop:
+            imgs,targets,(img1,img2) = data
+        else:
+            imgs,targets = data
         imgs = imgs.type(Tensor)
         targets = targets.type(LongTensor)
         targets = maskLabel(targets, nb, nr, ng, nl)
@@ -121,11 +126,28 @@ def valid():
         bSize = imgs.shape[0]
         imgCnt += bSize
 
+        if lprop:
+            H = imgs.size()[3]
+            W = imgs.size()[4]
+            outputs = torch.LongTensor(bSize, H, W)
+            predClassLP = torch.LongTensor(bSize, H, W)
+            cnt = 0
+            for img, lab in zip(imgs, targets):
+                outputs[cnt] = lab[0]
+                outputs[cnt + 1] = lab[1]
+                predClassLP[cnt] = updateLabels( lab[1], optFlow(img[1][0], img[0][0]))
+                predClassLP[cnt + 1] = updateLabels( lab[0], optFlow(img[0][0], img[1][0]))
+
+
         maskPred = torch.zeros(numClass, bSize, int(labSize[0]), int(labSize[1])).long()
         maskTarget = torch.zeros(numClass, bSize, int(labSize[0]), int(labSize[1])).long()
+        if lprop:
+            maskPredLP = torch.zeros(numClass, bSize, int(labSize[0]), int(labSize[1])).long()
         for currClass in range(numClass):
             maskPred[currClass] = predClass == currClass
             maskTarget[currClass] = targets == currClass
+            if lprop:
+                maskPredLP[currClass] = predClassLP == currClass
 
         for imgInd in range(bSize):
             for labIdx in range(numClass):
@@ -144,10 +166,16 @@ def valid():
             valI,valD = getPrecRecall(maskPred,maskTarget,thresh,dThresh)
             recPrec[0,i] += valI
             recPrec[1,i] += valD
+        if lprop:
+            for i,(thresh,dThresh) in enumerate(zip(thresholds,dThresholds)):
+                valI,valD = getPrecRecall(maskPredLP,maskTarget,thresh,dThresh)
+                recPrecLP[0,i] += valI
+                recPrecLP[1,i] += valD
 
     bar.finish()
     prune = count_zero_weights(model)
     recPrec /= imgCnt
+    recPrecLP /= imgCnt
     for labIdx in range(numClass):
         for predIdx in range(numClass):
             conf[(predIdx, labIdx)] /= (labCnts[labIdx] / 100.0)
@@ -168,16 +196,21 @@ def valid():
         )
     )
 
+    print("Normal")
     print("IoU:",recPrec[0])
     print("Dist:",recPrec[1])
+    if lprop:
+        print("LP")
+        print("IoU:",recPrecLP[0])
+        print("Dist:",recPrecLP[1])
 
     return
 
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--finetune", help="Finetuning", action="store_true", default=False)
-    parser.add_argument("--v2", help="Use v2 architecture", action="store_true", default=False)
+    parser.add_argument("--finetune", help="Finetuning", action="store_true", default=True)
+    parser.add_argument("--v2", help="Use v2 architecture", action="store_true", default=True)
     parser.add_argument("--noScale", help="Use VGA resolution", action="store_true", default=False)
     parser.add_argument("--UNet", help="Use Vanilla U-Net", action="store_true", default=False)
     parser.add_argument("--useDice", help="Use Dice Loss", action="store_true", default=False)
@@ -187,7 +220,8 @@ if __name__ == '__main__':
     parser.add_argument("--noLine", help="Treat Lines as Background", action="store_true")
     parser.add_argument("--topCam", help="Use Top Camera images only", action="store_true")
     parser.add_argument("--bottomCam", help="Use Bottom Camera images only", action="store_true")
-    parser.add_argument("--transfer", help="Layers to truly train", action="store_true", default=False)
+    parser.add_argument("--transfer", help="Layers to truly train", action="store_true", default=True)
+    parser.add_argument("--lProp", help="Test label propagation", action="store_true", default=False)
     opt = parser.parse_args()
 
     finetune = opt.finetune
@@ -200,6 +234,7 @@ if __name__ == '__main__':
     nl = opt.noLine
     tc = opt.topCam
     bc = opt.bottomCam
+    lprop = opt.lProp
 
     fineTuneStr = "Finetune" if finetune else ""
     scaleStr = "VGA" if noScale else ""
@@ -259,17 +294,22 @@ if __name__ == '__main__':
 
     batchSize = 16 if (finetune or noScale) else 64
 
-    root = "../data" if sys.platform != 'win32' else "D:/Datasets/RoboCup"
+    root = "../../Data/RoboCup" if sys.platform != 'win32' else "D:/Datasets/RoboCup"
 
-    valloader = data.DataLoader(SSYUVDataset(root, img_size=labSize, train=False, finetune=finetune, camera=cameraString),
-        batch_size=batchSize, shuffle=True, num_workers=5)
+    if lprop:
+        valloader = data.DataLoader(
+            LPDataSet(root, img_size=labSize, train=False, finetune=finetune),
+            batch_size=batchSize, shuffle=True, num_workers=8)
+    else:
+        valloader = data.DataLoader(SSYUVDataset(root, img_size=labSize, train=False, finetune=finetune, camera=cameraString),
+            batch_size=batchSize, shuffle=True, num_workers=8)
 
     numClass = 5 - nb - ng - nr - nl
-    numPlanes = 8 if unet else 8
-    levels = 3 if unet else 2
-    depth = 4
+    numPlanes = 16 if v2 else 8
+    levels = 3 if unet else (1 if v2 else 2)
+    depth = 4 if unet else 4
     bellySize = 0 if unet else 5
-    bellyPlanes = numPlanes * pow(2, depth)
+    bellyPlanes = numPlanes*pow(2,depth-1) if v2 else numPlanes*pow(2,depth)
 
     weights = Tensor([1, 2, 6, 3, 2]) if opt.useDice else Tensor([1, 10, 30, 5, 2])
     if finetune:

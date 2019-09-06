@@ -1,4 +1,5 @@
 import torch
+import cv2
 import os.path as osp
 from torch.utils import data
 import glob
@@ -182,3 +183,88 @@ class SSDataSet(data.Dataset):
             labels = label
 
         return imgs, labels
+
+class LPDataSet(data.Dataset):
+    def __init__(self, root, train=True, img_size=(120,160), finetune=True):
+        self.finetune = finetune
+        self.img_size = img_size
+        self.root = root
+        self.split = "train" if train else "val"
+        self.resize = transforms.Resize(img_size)
+        self.labResize = transforms.Resize(img_size,Image.NEAREST)
+        self.mean = [0.34190056, 0.4833289,  0.48565758] if finetune else [0.36269532, 0.41144562, 0.282713]
+        self.std = [0.47421749, 0.13846053, 0.1714848] if finetune else [0.31111388, 0.21010718, 0.34060917]
+        self.normalize = transforms.Normalize(mean=self.mean,std=self.std)
+        self.images = []
+        self.labels = []
+        self.predictions = []
+
+
+        if finetune:
+            data_dir = osp.join(root,"FinetuneHorizon")
+        data_dir = osp.join(data_dir, self.split)
+
+        for dir in get_immediate_subdirectories(data_dir):
+            currDir = osp.join(data_dir,dir)
+            img_dir = osp.join(currDir,"images")
+            lab_dir = osp.join(currDir,"labels")
+            images = []
+            labels = []
+            for file in sorted(glob.glob1(img_dir, "*.png"), key=alphanum_key):
+                images.append(osp.join(img_dir, file))
+            for file in sorted(glob.glob1(lab_dir, "*.png"), key=alphanum_key):
+                labels.append(osp.join(lab_dir,file))
+            self.images.append(images)
+            self.labels.append(labels)
+
+    def __len__(self):
+        length = 0
+        for imgs in self.images:
+            length += len(imgs)-1
+        return length
+
+    def __getitem__(self, index):
+        dirindex = 0
+        itemindex = index
+
+        #print index
+
+        for imgs in self.images:
+            #print dirindex, itemindex, len(imgs)
+            if itemindex >= len(imgs) - 1:
+                dirindex += 1
+                itemindex -= (len(imgs))
+            else:
+                break
+
+        img_file = self.images[dirindex][itemindex]
+        img_file2 = self.images[dirindex][itemindex+1]
+        lab_file = self.labels[dirindex][itemindex]
+        lab_file2 = self.labels[dirindex][itemindex+1]
+
+        img = Image.open(img_file).convert('RGB')
+        img2 = Image.open(img_file2).convert('RGB')
+        label = Image.open(lab_file).convert("I")
+        label2 = Image.open(lab_file2).convert("I")
+
+        if self.img_size[0] != img.size[1] and self.img_size[1] != img.size[0]:
+            img = self.resize(img)
+        if self.img_size[0] != img2.size[1] and self.img_size[1] != img2.size[0]:
+            img2 = self.resize(img2)
+        if self.img_size[0] != label.size[1] and self.img_size[1] != label.size[0]:
+            label = self.labResize(label)
+        if self.img_size[0] != label2.size[1] and self.img_size[1] != label2.size[0]:
+            label2 = self.labResize(label2)
+
+        img_ten = transforms.functional.to_tensor(rgb2yuv(img)).float()
+        img2_ten = transforms.functional.to_tensor(rgb2yuv(img2)).float()
+        label = transforms.functional.to_tensor(label)
+        label2 = transforms.functional.to_tensor(label2)
+        img_ten = self.normalize(img_ten)
+        img2_ten = self.normalize(img2_ten)
+        imgs = torch.cat([img_ten,img2_ten])
+        labels = torch.cat([label,label2])
+
+        img = cv2.cvtColor(np.array(img),cv2.COLOR_RGB2GRAY)
+        img2 = cv2.cvtColor(np.array(img2),cv2.COLOR_RGB2GRAY)
+        return imgs, labels, (img,img2)

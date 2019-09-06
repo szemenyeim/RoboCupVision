@@ -86,18 +86,18 @@ if __name__ == '__main__':
 
     batchSize = 1
 
-    root = "../data" if sys.platform != 'win32' else "D:/Datasets/RoboCup"
+    root = "../../Data/RoboCup" if sys.platform != 'win32' else "D:/Datasets/RoboCup"
 
     valloader = data.DataLoader(
         SSYUVDataset(root, img_size=labSize, train=False, finetune=finetune, camera=cameraString),
         batch_size=batchSize, shuffle=False, num_workers=5)
 
     numClass = 5 - nb - ng - nr - nl
-    numPlanes = 8 if unet else 8
-    levels = 3 if unet else 2
-    depth = 4
+    numPlanes = 16 if v2 else 8
+    levels = 3 if unet else (1 if v2 else 2)
+    depth = 4 if unet else 4
     bellySize = 0 if unet else 5
-    bellyPlanes = numPlanes * pow(2, depth)
+    bellyPlanes = numPlanes*pow(2,depth-1) if v2 else numPlanes*pow(2,depth)
 
     mapLoc = None if cuda else {'cuda:0': 'cpu'}
 

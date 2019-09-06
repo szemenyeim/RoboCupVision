@@ -226,8 +226,8 @@ if __name__ == '__main__':
     dec = opt.decay if finetune else opt.decay/10
     transfers = [1, 2, 3, 4] if opt.transfer else [0]
     decays = [10*dec, 5*dec, 2*dec, dec] if (finetune and not opt.transfer) else [dec]
-    '''if opt.UNet:
-        decays = [d*2 for d in decays]'''
+    if opt.v2:
+        decays = [d*2 for d in decays]
     noScale = opt.noScale
     unet = opt.UNet
     v2 = opt.v2
@@ -263,7 +263,7 @@ if __name__ == '__main__':
         print("You can only select camera images for the finetune dataset. Using both cameras by default")
         cameraString = "both"
 
-    n_cpu = 4
+    n_cpu = 8
     channels = 3
     epochs = 100 if noScale or not finetune else 200
     momentum = 0.5
@@ -290,7 +290,7 @@ if __name__ == '__main__':
 
     batchSize = 16 if finetune else (32 if noScale else 64)
 
-    root = "../data" if sys.platform != 'win32' else "D:/Datasets/RoboCup"
+    root = "../../Data/RoboCup" if sys.platform != 'win32' else "D:/Datasets/RoboCup"
 
     trainloader = data.DataLoader(SSYUVDataset(root,img_size=labSize,train=True,finetune=finetune,camera=cameraString),
                                   batch_size=batchSize, shuffle=True, num_workers=5)
