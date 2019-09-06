@@ -178,6 +178,7 @@ def valid(epoch,epochs,bestLoss,pruned):
     )
 
     name = "bestFinetune" if finetune else "best"
+    name += v2Str
     name += scaleStr
 
     name += unetStr
@@ -205,6 +206,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--finetune", help="Finetuning", action="store_true", default=False)
+    parser.add_argument("--v2", help="Use v2 architecture", action="store_true", default=False)
     parser.add_argument("--noScale", help="Use VGA resolution", action="store_true", default=False)
     parser.add_argument("--UNet", help="Use Vanilla U-Net", action="store_true", default=False)
     parser.add_argument("--useDice", help="Use Dice Loss", action="store_true", default=False)
@@ -228,6 +230,7 @@ if __name__ == '__main__':
         decays = [d*2 for d in decays]'''
     noScale = opt.noScale
     unet = opt.UNet
+    v2 = opt.v2
     nb = opt.noBall
     ng = opt.noGoal
     nr = opt.noRobot
@@ -237,6 +240,7 @@ if __name__ == '__main__':
 
     fineTuneStr = "Finetuned" if finetune else ""
     scaleStr = "VGA" if noScale else ""
+    v2Str = "v2" if v2 else ""
     unetStr = "UNet" if unet else ""
     nbStr = "NoBall" if nb else ""
     ngStr = "NoGoal" if ng else ""
@@ -249,7 +253,7 @@ if __name__ == '__main__':
     scale = 2 if noScale else 4
     labSize = (480//scale, 640//scale)
 
-    weights_path = "checkpoints/best%s%s%s%s%s%s%s.weights" % (scaleStr,unetStr,nbStr,ngStr,nrStr,nlStr,cameraSaveStr)
+    weights_path = "checkpoints/best%s%s%s%s%s%s%s%s.weights" % (v2Str,scaleStr,unetStr,nbStr,ngStr,nrStr,nlStr,cameraSaveStr)
 
     if nb and ng and nr and nl:
         print("You need to have at least one non-background class!")
@@ -286,7 +290,7 @@ if __name__ == '__main__':
 
     batchSize = 16 if finetune else (32 if noScale else 64)
 
-    root = "../data" if sys.platform != 'win32' else "E:/RoboCup"
+    root = "../data" if sys.platform != 'win32' else "D:/Datasets/RoboCup"
 
     trainloader = data.DataLoader(SSYUVDataset(root,img_size=labSize,train=True,finetune=finetune,camera=cameraString),
                                   batch_size=batchSize, shuffle=True, num_workers=5)
@@ -295,11 +299,11 @@ if __name__ == '__main__':
                                 batch_size=batchSize, shuffle=True, num_workers=5)
 
     numClass = 5 - nb - ng - nr - nl
-    numPlanes = 8 if unet else 8
-    levels = 3 if unet else 2
+    numPlanes = 16 if v2 else 8
+    levels = 3 if unet else (1 if v2 else 2)
     depth = 4 if unet else 4
     bellySize = 0 if unet else 5
-    bellyPlanes = numPlanes*pow(2,depth)
+    bellyPlanes = numPlanes*pow(2,depth-1) if v2 else numPlanes*pow(2,depth)
 
     weights = Tensor([1, 2, 6, 3, 2]) if opt.useDice else Tensor([1, 10, 30, 10, 2])
     if finetune:
@@ -361,7 +365,7 @@ if __name__ == '__main__':
                     #bestLoss = train(epoch,epochs,bestLoss)
 
             if finetune and (transfer == 0):
-                model.load_state_dict(torch.load("checkpoints/bestFinetune%s%s%s%s%s%s%s.weights" % (scaleStr,unetStr,nbStr,ngStr,nrStr,nlStr,cameraSaveStr)))
+                model.load_state_dict(torch.load("checkpoints/bestFinetune%s%s%s%s%s%s%s%s.weights" % (v2Str,scaleStr,unetStr,nbStr,ngStr,nrStr,nlStr,cameraSaveStr)))
                 with torch.no_grad():
                     indices = pruneModelNew(model.parameters())
 

@@ -25,6 +25,7 @@ import progressbar
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--finetune", help="Finetuning", action="store_true", default=False)
+    parser.add_argument("--v2", help="Use v2 architecture", action="store_true", default=False)
     parser.add_argument("--noScale", help="Use VGA resolution", action="store_true", default=False)
     parser.add_argument("--UNet", help="Use Vanilla U-Net", action="store_true", default=False)
     parser.add_argument("--useDice", help="Use Dice Loss", action="store_true", default=False)
@@ -38,6 +39,7 @@ if __name__ == '__main__':
 
     finetune = opt.finetune
     noScale = opt.noScale
+    v2 = opt.v2
     unet = opt.UNet
     nb = opt.noBall
     ng = opt.noGoal
@@ -48,6 +50,7 @@ if __name__ == '__main__':
 
     fineTuneStr = "Finetune" if finetune else ""
     scaleStr = "VGA" if noScale else ""
+    v2Str = "v2" if v2 else ""
     unetStr = "UNet" if unet else ""
     nbStr = "NoBall" if nb else ""
     ngStr = "NoGoal" if ng else ""
@@ -63,7 +66,7 @@ if __name__ == '__main__':
     if noScale:
         dThresholds = [d * 2 for d in dThresholds]
 
-    name = "checkpoints/best%s%s%s%s%s%s%s%s" % (fineTuneStr, scaleStr, unetStr, nbStr, ngStr, nrStr, nlStr, cameraSaveStr)
+    name = "checkpoints/best%s%s%s%s%s%s%s%s%s" % (fineTuneStr, v2Str, scaleStr, unetStr, nbStr, ngStr, nrStr, nlStr, cameraSaveStr)
 
     weights_path = name + ".weights"
 
@@ -83,7 +86,7 @@ if __name__ == '__main__':
 
     batchSize = 1
 
-    root = "../data" if sys.platform != 'win32' else "E:/RoboCup"
+    root = "../data" if sys.platform != 'win32' else "D:/Datasets/RoboCup"
 
     valloader = data.DataLoader(
         SSYUVDataset(root, img_size=labSize, train=False, finetune=finetune, camera=cameraString),
