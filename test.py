@@ -2,6 +2,7 @@ from __future__ import division
 
 from model import *
 from dataset import *
+import time
 
 import os
 import sys
@@ -11,10 +12,7 @@ from torch import nn
 from torch.utils import data
 import lr_scheduler
 from model import CrossEntropyLoss2d, PB_FCN, pruneModelNew, PB_FCN_2, DiceLoss
-from dataset import SSDataSet
-from transform import Scale, ToLabel, HorizontalFlip, VerticalFlip, ToYUV, maskLabel, updateLabels, optFlow
-from torchvision.transforms import Compose, Normalize, ToTensor, ColorJitter
-import torch.optim as optim
+from transform import Scale, ToLabel, HorizontalFlip, VerticalFlip, ToYUV, maskLabel, updateLabels, optFlow, Colorize
 torch.set_printoptions(precision=2,sci_mode=False)
 import cv2
 
@@ -40,10 +38,13 @@ def getPrecRecall(maskPred,maskTarget, thresh, distanceThresh):
             imgPred = maskPred[c,b,:].cpu().numpy().astype('uint8')
             imgTar = maskTarget[c,b,:].cpu().numpy().astype('uint8')
 
+            #imgPred = cv2.morphologyEx(imgPred,cv2.MORPH_CLOSE,np.ones((3,3)))
+
             nPred,predLab = cv2.connectedComponents(imgPred)
             nTrue,tarLab = cv2.connectedComponents(imgTar)
             nPred -=1
             nTrue -=1
+            nActPred = 0
 
             usedTarI = np.zeros(nTrue)
             usedTarD = np.zeros(nTrue)
@@ -53,6 +54,7 @@ def getPrecRecall(maskPred,maskTarget, thresh, distanceThresh):
 
             for i in range(nPred):
                 pred = (predLab == (i+1))
+                nActPred +=1
                 predBox = cv2.boundingRect(pred.astype('uint8'))
                 predCent = (predBox[0]+predBox[2]/2,predBox[1]+predBox[3]/2)
 
@@ -107,7 +109,7 @@ def valid():
 
     for batch_i, data in enumerate(valloader):
         if lprop:
-            imgs,targets,(img1,img2) = data
+            imgs,targets,cvimgs = data
         else:
             imgs,targets = data
         imgs = imgs.type(Tensor)
@@ -127,16 +129,12 @@ def valid():
         imgCnt += bSize
 
         if lprop:
-            H = imgs.size()[3]
-            W = imgs.size()[4]
-            outputs = torch.LongTensor(bSize, H, W)
+            H = imgs.size()[2]
+            W = imgs.size()[3]
             predClassLP = torch.LongTensor(bSize, H, W)
-            cnt = 0
-            for img, lab in zip(imgs, targets):
-                outputs[cnt] = lab[0]
-                outputs[cnt + 1] = lab[1]
-                predClassLP[cnt] = updateLabels( lab[1], optFlow(img[1][0], img[0][0]))
-                predClassLP[cnt + 1] = updateLabels( lab[0], optFlow(img[0][0], img[1][0]))
+            for i, img in enumerate(cvimgs):
+                predClassLP[2*i] = updateLabels( targets[2*i + 1], optFlow(img[0], img[1]))
+                predClassLP[2*i + 1] = updateLabels( targets[2*i], optFlow(img[1], img[0]))
 
 
         maskPred = torch.zeros(numClass, bSize, int(labSize[0]), int(labSize[1])).long()
@@ -209,8 +207,8 @@ def valid():
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--finetune", help="Finetuning", action="store_true", default=True)
-    parser.add_argument("--v2", help="Use v2 architecture", action="store_true", default=True)
+    parser.add_argument("--finetune", help="Finetuning", action="store_true", default=False)
+    parser.add_argument("--v2", help="Use v2 architecture", action="store_true", default=False)
     parser.add_argument("--noScale", help="Use VGA resolution", action="store_true", default=False)
     parser.add_argument("--UNet", help="Use Vanilla U-Net", action="store_true", default=False)
     parser.add_argument("--useDice", help="Use Dice Loss", action="store_true", default=False)
@@ -220,7 +218,7 @@ if __name__ == '__main__':
     parser.add_argument("--noLine", help="Treat Lines as Background", action="store_true")
     parser.add_argument("--topCam", help="Use Top Camera images only", action="store_true")
     parser.add_argument("--bottomCam", help="Use Bottom Camera images only", action="store_true")
-    parser.add_argument("--transfer", help="Layers to truly train", action="store_true", default=True)
+    parser.add_argument("--transfer", help="Layers to truly train", action="store_true", default=False)
     parser.add_argument("--lProp", help="Test label propagation", action="store_true", default=False)
     opt = parser.parse_args()
 
@@ -251,6 +249,9 @@ if __name__ == '__main__':
 
     thresholds = [0.75, 0.5, 0.25, 0.1, 0.05]
     dThresholds = [1.25, 2.5, 5, 10, 20]
+    if lprop:
+        thresholds = [0.25]
+        dThresholds = [10]
     if noScale:
         dThresholds = [d*2 for d in dThresholds]
 
@@ -264,6 +265,8 @@ if __name__ == '__main__':
     weights_path += [name + ".weights"]
     if not noScale:
         weights_path = [path for path in weights_path if "VGA" not in path]
+    if not v2:
+        weights_path = [path for path in weights_path if "v2" not in path]
     if not unet:
         weights_path = [path for path in weights_path if "UNet" not in path]
     if not nb:
@@ -275,6 +278,8 @@ if __name__ == '__main__':
     if not nl:
         weights_path = [path for path in weights_path if "NoLine" not in path]
 
+    if lprop:
+        weights_path = [weights_path[0]]
     if nb and ng and nr and nl:
         print("You need to have at least one non-background class!")
         exit(-1)
@@ -299,10 +304,10 @@ if __name__ == '__main__':
     if lprop:
         valloader = data.DataLoader(
             LPDataSet(root, img_size=labSize, train=False, finetune=finetune),
-            batch_size=batchSize, shuffle=True, num_workers=8)
+            batch_size=1, shuffle=False, num_workers=8, collate_fn=my_collate)
     else:
         valloader = data.DataLoader(SSYUVDataset(root, img_size=labSize, train=False, finetune=finetune, camera=cameraString),
-            batch_size=batchSize, shuffle=True, num_workers=8)
+            batch_size=batchSize, shuffle=False, num_workers=8)
 
     numClass = 5 - nb - ng - nr - nl
     numPlanes = 16 if v2 else 8

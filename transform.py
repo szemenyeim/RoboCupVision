@@ -183,19 +183,17 @@ def labelToPred(label, numClass):
     return out
 
 def optFlow(imgp, imgn):
-    imgp = ((imgp.data.cpu().numpy()+1.0)*127.5).astype('uint8')
-    imgn = ((imgn.data.cpu().numpy()+1.0)*127.5).astype('uint8')
-    flow = np.zeros(1)
-    flow = cv2.calcOpticalFlowFarneback(imgp,imgn,flow,pyr_scale=0.5,levels=2,winsize=9,iterations=2,poly_n=7,poly_sigma=1.5,flags=0)
-    return flow
+    flow = cv2.calcOpticalFlowFarneback(imgp,imgn,None,pyr_scale=0.5,levels=2,winsize=15,iterations=2,poly_n=7,poly_sigma=1.5,flags=0)
+    return flow.transpose((2,0,1))
 
 def updateLabels(oldLab,flow):
-    labels = torch.zeros(oldLab.size()).long()
-    flow = np.rint(flow)
-    for i in range(oldLab.size()[0]):
-        for j in range(oldLab.size()[1]):
-            otheri = i + flow[i,j,1]
-            otherj = j + flow[i,j,0]
-            if otherj >= 0 and otherj < oldLab.size()[1] and otheri >= 0 and otheri < oldLab.size()[0]:
-                labels[otheri,otherj] = oldLab.data[i,j]
+    oldInd = np.indices(oldLab.shape)
+    indices = (oldInd + flow).astype('float32')
+    x = indices[1]
+    y = indices[0]
+
+    ans = cv2.remap(oldLab.cpu().numpy(),x,y,cv2.INTER_NEAREST,borderMode=cv2.BORDER_CONSTANT,borderValue=0).astype('int64')
+
+    labels = torch.from_numpy(ans).long()
+
     return labels

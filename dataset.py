@@ -12,6 +12,10 @@ import torchvision.transforms as transforms
 import torchvision.transforms.functional as F
 from skimage.color import rgb2yuv
 
+def my_collate(batch):
+    imgs,targets,cvimgs = zip(*batch)
+    return torch.cat(imgs),torch.cat(targets),cvimgs
+
 class ColorJitter(object):
     def __init__(self,b=0.3,c=0.3,s=0.3,h=3.1415/6):
         super(ColorJitter,self).__init__()
@@ -188,7 +192,7 @@ class LPDataSet(data.Dataset):
     def __init__(self, root, train=True, img_size=(120,160), finetune=True):
         self.finetune = finetune
         self.img_size = img_size
-        self.root = root
+        self.root = osp.join(root,"LabelProp")
         self.split = "train" if train else "val"
         self.resize = transforms.Resize(img_size)
         self.labResize = transforms.Resize(img_size,Image.NEAREST)
@@ -200,8 +204,7 @@ class LPDataSet(data.Dataset):
         self.predictions = []
 
 
-        if finetune:
-            data_dir = osp.join(root,"FinetuneHorizon")
+        data_dir = osp.join(self.root,"Real" if finetune else "Synthetic")
         data_dir = osp.join(data_dir, self.split)
 
         for dir in get_immediate_subdirectories(data_dir):
@@ -256,12 +259,14 @@ class LPDataSet(data.Dataset):
         if self.img_size[0] != label2.size[1] and self.img_size[1] != label2.size[0]:
             label2 = self.labResize(label2)
 
-        img_ten = transforms.functional.to_tensor(rgb2yuv(img)).float()
-        img2_ten = transforms.functional.to_tensor(rgb2yuv(img2)).float()
+        img_ten = cv2.cvtColor(np.array(img),cv2.COLOR_RGB2YUV)
+        img2_ten = cv2.cvtColor(np.array(img2),cv2.COLOR_RGB2YUV)
+        img_ten = transforms.functional.to_tensor(img_ten).float()
+        img2_ten = transforms.functional.to_tensor(img2_ten).float()
         label = transforms.functional.to_tensor(label)
         label2 = transforms.functional.to_tensor(label2)
-        img_ten = self.normalize(img_ten)
-        img2_ten = self.normalize(img2_ten)
+        img_ten = self.normalize(img_ten).unsqueeze(0)
+        img2_ten = self.normalize(img2_ten).unsqueeze(0)
         imgs = torch.cat([img_ten,img2_ten])
         labels = torch.cat([label,label2])
 
