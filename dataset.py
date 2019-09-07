@@ -189,9 +189,10 @@ class SSDataSet(data.Dataset):
         return imgs, labels
 
 class LPDataSet(data.Dataset):
-    def __init__(self, root, train=True, img_size=(120,160), finetune=True):
+    def __init__(self, root, train=True, img_size=(120,160), finetune=True, len_seq = 2):
         self.finetune = finetune
         self.img_size = img_size
+        self.len_seq = len_seq
         self.root = osp.join(root,"LabelProp")
         self.split = "train" if train else "val"
         self.resize = transforms.Resize(img_size)
@@ -223,7 +224,7 @@ class LPDataSet(data.Dataset):
     def __len__(self):
         length = 0
         for imgs in self.images:
-            length += len(imgs)-1
+            length += len(imgs) - self.len_seq + 1
         return length
 
     def __getitem__(self, index):
@@ -233,43 +234,37 @@ class LPDataSet(data.Dataset):
         #print index
 
         for imgs in self.images:
-            #print dirindex, itemindex, len(imgs)
-            if itemindex >= len(imgs) - 1:
+            #print(dirindex, itemindex, len(imgs))
+            if itemindex >= len(imgs) - self.len_seq + 1:
                 dirindex += 1
-                itemindex -= (len(imgs))
+                itemindex -= (len(imgs) - self.len_seq + 1)
             else:
                 break
 
-        img_file = self.images[dirindex][itemindex]
-        img_file2 = self.images[dirindex][itemindex+1]
-        lab_file = self.labels[dirindex][itemindex]
-        lab_file2 = self.labels[dirindex][itemindex+1]
+        #print(dirindex, itemindex)
+        labels = []
+        imgs = []
+        cvimgs = []
+        for i in range(self.len_seq):
+            img_file = self.images[dirindex][itemindex+i]
+            lab_file = self.labels[dirindex][itemindex+i]
 
-        img = Image.open(img_file).convert('RGB')
-        img2 = Image.open(img_file2).convert('RGB')
-        label = Image.open(lab_file).convert("I")
-        label2 = Image.open(lab_file2).convert("I")
+            img = Image.open(img_file).convert('RGB')
+            label = Image.open(lab_file).convert("I")
 
-        if self.img_size[0] != img.size[1] and self.img_size[1] != img.size[0]:
-            img = self.resize(img)
-        if self.img_size[0] != img2.size[1] and self.img_size[1] != img2.size[0]:
-            img2 = self.resize(img2)
-        if self.img_size[0] != label.size[1] and self.img_size[1] != label.size[0]:
-            label = self.labResize(label)
-        if self.img_size[0] != label2.size[1] and self.img_size[1] != label2.size[0]:
-            label2 = self.labResize(label2)
+            if self.img_size[0] != img.size[1] and self.img_size[1] != img.size[0]:
+                img = self.resize(img)
+            if self.img_size[0] != label.size[1] and self.img_size[1] != label.size[0]:
+                label = self.labResize(label)
 
-        img_ten = cv2.cvtColor(np.array(img),cv2.COLOR_RGB2YUV)
-        img2_ten = cv2.cvtColor(np.array(img2),cv2.COLOR_RGB2YUV)
-        img_ten = transforms.functional.to_tensor(img_ten).float()
-        img2_ten = transforms.functional.to_tensor(img2_ten).float()
-        label = transforms.functional.to_tensor(label)
-        label2 = transforms.functional.to_tensor(label2)
-        img_ten = self.normalize(img_ten).unsqueeze(0)
-        img2_ten = self.normalize(img2_ten).unsqueeze(0)
-        imgs = torch.cat([img_ten,img2_ten])
-        labels = torch.cat([label,label2])
+            img_ten = cv2.cvtColor(np.array(img),cv2.COLOR_RGB2YUV)
+            img_ten = transforms.functional.to_tensor(img_ten).float()
+            label = transforms.functional.to_tensor(label)
+            img_ten = self.normalize(img_ten).unsqueeze(0)
+            imgs.append(img_ten)
+            cvimgs.append(cv2.cvtColor(np.array(img),cv2.COLOR_RGB2GRAY))
+            labels.append(label)
 
-        img = cv2.cvtColor(np.array(img),cv2.COLOR_RGB2GRAY)
-        img2 = cv2.cvtColor(np.array(img2),cv2.COLOR_RGB2GRAY)
-        return imgs, labels, (img,img2)
+        imgs = torch.cat(imgs)
+        labels = torch.cat(labels)
+        return imgs, labels, cvimgs

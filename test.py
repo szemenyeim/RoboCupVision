@@ -110,6 +110,7 @@ def valid():
     for batch_i, data in enumerate(valloader):
         if lprop:
             imgs,targets,cvimgs = data
+            cvimgs = cvimgs[0]
         else:
             imgs,targets = data
         imgs = imgs.type(Tensor)
@@ -133,8 +134,15 @@ def valid():
             W = imgs.size()[3]
             predClassLP = torch.LongTensor(bSize, H, W)
             for i, img in enumerate(cvimgs):
-                predClassLP[2*i] = updateLabels( targets[2*i + 1], optFlow(img[0], img[1]))
-                predClassLP[2*i + 1] = updateLabels( targets[2*i], optFlow(img[1], img[0]))
+                if i == 0:
+                    predClassLP[i] = updateLabels( predClass[i+1], optFlow(cvimgs[i], cvimgs[i+1]))
+                else:
+                    predClassLP[i] = updateLabels( predClassLP[i-1], optFlow(cvimgs[i], cvimgs[i-1]))
+                    '''c = Colorize(predClassLP[i]).permute(1,2,0).numpy()
+                    ct = Colorize(targets[i]).permute(1,2,0).numpy()
+                    cv2.imshow("pred",cv2.resize(c,(640,480),interpolation=cv2.INTER_NEAREST))
+                    cv2.imshow("tar",cv2.resize(ct,(640,480),interpolation=cv2.INTER_NEAREST))
+                    cv2.waitKey(0)'''
 
 
         maskPred = torch.zeros(numClass, bSize, int(labSize[0]), int(labSize[1])).long()
@@ -249,9 +257,7 @@ if __name__ == '__main__':
 
     thresholds = [0.75, 0.5, 0.25, 0.1, 0.05]
     dThresholds = [1.25, 2.5, 5, 10, 20]
-    if lprop:
-        thresholds = [0.25]
-        dThresholds = [10]
+    len_seq = 4
     if noScale:
         dThresholds = [d*2 for d in dThresholds]
 
@@ -303,7 +309,7 @@ if __name__ == '__main__':
 
     if lprop:
         valloader = data.DataLoader(
-            LPDataSet(root, img_size=labSize, train=False, finetune=finetune),
+            LPDataSet(root, img_size=labSize, train=False, finetune=finetune, len_seq=len_seq),
             batch_size=1, shuffle=False, num_workers=8, collate_fn=my_collate)
     else:
         valloader = data.DataLoader(SSYUVDataset(root, img_size=labSize, train=False, finetune=finetune, camera=cameraString),

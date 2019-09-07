@@ -188,9 +188,8 @@ def optFlow(imgp, imgn):
 
 def updateLabels(oldLab,flow):
     oldInd = np.indices(oldLab.shape)
-    indices = (oldInd + flow).astype('float32')
-    x = indices[1]
-    y = indices[0]
+    x = (oldInd[1] + flow[0]).astype('float32')
+    y = (oldInd[0] + flow[1]).astype('float32')
 
     ans = cv2.remap(oldLab.cpu().numpy(),x,y,cv2.INTER_NEAREST,borderMode=cv2.BORDER_CONSTANT,borderValue=0).astype('int64')
 
