@@ -225,7 +225,7 @@ if __name__ == '__main__':
     learning_rate = opt.lr#*2 if finetune and not opt.transfer else opt.lr
     dec = opt.decay if finetune else opt.decay/10
     transfers = [1, 2, 3, 4] if opt.transfer else [0]
-    decays = [10*dec, 5*dec, 2*dec, dec] if (finetune and not opt.transfer) else [dec]
+    decays = [10*dec, 5*dec, 2*dec, dec] if (finetune and not opt.transfer and not opt.UNet) else [dec]
     if opt.v2:
         decays = [d*2 for d in decays]
     noScale = opt.noScale
@@ -293,16 +293,16 @@ if __name__ == '__main__':
     root = "../../Data/RoboCup" if sys.platform != 'win32' else "D:/Datasets/RoboCup"
 
     trainloader = data.DataLoader(SSYUVDataset(root,img_size=labSize,train=True,finetune=finetune,camera=cameraString),
-                                  batch_size=batchSize, shuffle=True, num_workers=5)
+                                  batch_size=batchSize, shuffle=True, num_workers=4)
 
     valloader = data.DataLoader(SSYUVDataset(root,img_size=labSize,train=False,finetune=finetune,camera=cameraString),
-                                batch_size=batchSize, shuffle=True, num_workers=5)
+                                batch_size=batchSize, shuffle=True, num_workers=4)
 
     numClass = 5 - nb - ng - nr - nl
     numPlanes = 16 if v2 else 8
     levels = 3 if unet else (1 if v2 else 2)
     depth = 4 if unet else 4
-    bellySize = 0 if unet else 5
+    bellySize = 0 if unet else (2 if v2 else 5)
     bellyPlanes = numPlanes*pow(2,depth-1) if v2 else numPlanes*pow(2,depth)
 
     weights = Tensor([1, 2, 6, 3, 2]) if opt.useDice else Tensor([1, 10, 30, 10, 2])
@@ -333,7 +333,7 @@ if __name__ == '__main__':
                 torch.cuda.manual_seed(12345678)
 
             # Initiate model
-            model = ROBO_UNet(noScale,planes=numPlanes,depth=depth,levels=levels,bellySize=bellySize,bellyPlanes=bellyPlanes,pool=unet)
+            model = ROBO_UNet(noScale,planes=numPlanes,depth=depth,levels=levels,bellySize=bellySize,bellyPlanes=bellyPlanes,pool=unet,v2=v2)
             comp = model.get_computations()
             print(comp)
             print(sum(comp))
@@ -364,7 +364,7 @@ if __name__ == '__main__':
                 #else:
                     #bestLoss = train(epoch,epochs,bestLoss)
 
-            if finetune and (transfer == 0):
+            if finetune and (transfer == 0) and not unet:
                 model.load_state_dict(torch.load("checkpoints/bestFinetune%s%s%s%s%s%s%s%s.weights" % (v2Str,scaleStr,unetStr,nbStr,ngStr,nrStr,nlStr,cameraSaveStr)))
                 with torch.no_grad():
                     indices = pruneModelNew(model.parameters())

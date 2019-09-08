@@ -459,11 +459,12 @@ class PB_FCN_2(nn.Module):
         return self.segmenter(up)
 
 class ROBO_UNet(nn.Module):
-    def __init__(self, noScale = False, planes=8, nClass=5, depth=4, levels=2, bellySize=5, bellyPlanes=128, pool=False):
+    def __init__(self, noScale = False, planes=8, nClass=5, depth=4, levels=2, bellySize=5, bellyPlanes=128, pool=False, v2 = False):
         super(ROBO_UNet,self).__init__()
 
         self.numClass = nClass
         self.planes = planes
+        self.v2 = v2
         self.img_shape = (240,320) if noScale else (120,160)
         if noScale:
             depth += 1
@@ -484,10 +485,12 @@ class ROBO_UNet(nn.Module):
         self.upPart = nn.ModuleList()
         for i in range(depth-1):
             nCh = planes*pow(2,depth-1-i)
-            self.upPart.add_module(("Up%d"%i),upSampleTransposeConv(nCh,nCh//2))
-            #self.upPart.add_module(("Up%d" % i), trConvSep(nCh, nCh // 2))
+            oCh = nCh//2
+            if i > 0 and v2:
+                nCh *= 2
+            self.upPart.add_module(("Up%d"%i),upSampleTransposeConv(nCh,oCh))
 
-        self.segmenter = UltClassifier(planes,nClass,False)
+        self.segmenter = UltClassifier(planes*2 if v2 else planes,nClass,False)
 
     def forward(self, x):
 
@@ -500,7 +503,10 @@ class ROBO_UNet(nn.Module):
 
         up = downs[-1]
         for i,layer in enumerate(self.upPart):
-            up = layer(up) + downs[-(i+2)]
+            if self.v2:
+                up = torch.cat([layer(up), downs[-(i+2)]],1)
+            else:
+                up = layer(up) + downs[-(i+2)]
 
         return self.segmenter(up)
 
