@@ -401,14 +401,14 @@ class LevelDown(nn.Module):
         return self.layers(x)
 
 class UltClassifier(nn.Module):
-    def __init__(self, inplanes, nClass, pool, dropout=0.5):
+    def __init__(self, inplanes, nClass, pool, dropout=0.5, size = 1):
         super(UltClassifier,self).__init__()
 
         self.layers = nn.Sequential()
         if pool:
             self.layers.add_module("Pool",nn.AdaptiveAvgPool2d(1))
             self.layers.add_module("DO",nn.Dropout2d(dropout))
-        self.layers.add_module("Class",nn.Conv2d(inplanes,nClass,1))
+        self.layers.add_module("Class",nn.Conv2d(inplanes,nClass,size,padding=size//2))
 
     def forward(self, x):
         return self.layers(x)
@@ -459,7 +459,7 @@ class PB_FCN_2(nn.Module):
         return self.segmenter(up)
 
 class ROBO_UNet(nn.Module):
-    def __init__(self, noScale = False, planes=8, nClass=5, depth=4, levels=2, bellySize=5, bellyPlanes=128, pool=False, v2 = False):
+    def __init__(self, noScale = False, planes=8, nClass=5, depth=4, levels=2, bellySize=5, bellyPlanes=128, pool=False, v2 = False, classSize=1):
         super(ROBO_UNet,self).__init__()
 
         self.numClass = nClass
@@ -490,7 +490,7 @@ class ROBO_UNet(nn.Module):
                 nCh *= 2
             self.upPart.add_module(("Up%d"%i),upSampleTransposeConv(nCh,oCh))
 
-        self.segmenter = UltClassifier(planes*2 if v2 else planes,nClass,False)
+        self.segmenter = UltClassifier(planes*2 if v2 else planes,nClass,False,size=classSize)
 
     def forward(self, x):
 

@@ -316,10 +316,11 @@ if __name__ == '__main__':
             batch_size=batchSize, shuffle=False, num_workers=8)
 
     numClass = 5 - nb - ng - nr - nl
-    numPlanes = 16 if v2 else 8
+    numPlanes = 8 if v2 else 8
     levels = 3 if unet else (1 if v2 else 2)
     depth = 4 if unet else 4
-    bellySize = 0 if unet else (2 if v2 else 5)
+    bellySize = 0 if unet else (9 if v2 else 5)
+    classSize = 3 if v2 else 1
     bellyPlanes = numPlanes*pow(2,depth-1) if v2 else numPlanes*pow(2,depth)
 
     weights = Tensor([1, 2, 6, 3, 2]) if opt.useDice else Tensor([1, 10, 30, 5, 2])
@@ -340,7 +341,7 @@ if __name__ == '__main__':
             print("######################################################")
 
             # Initiate model
-            model = ROBO_UNet(noScale,planes=numPlanes,depth=depth,levels=levels,bellySize=bellySize,bellyPlanes=bellyPlanes,pool=unet,v2=v2)
+            model = ROBO_UNet(noScale,planes=numPlanes,depth=depth,levels=levels,bellySize=bellySize,bellyPlanes=bellyPlanes,pool=unet,v2=v2,classSize=classSize)
             model.load_state_dict(torch.load(w_path))
             comp = model.get_computations(True)
             print(comp)

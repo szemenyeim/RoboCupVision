@@ -216,18 +216,18 @@ if __name__ == '__main__':
     parser.add_argument("--noLine", help="Treat Lines as Background", action="store_true")
     parser.add_argument("--topCam", help="Use Top Camera images only", action="store_true")
     parser.add_argument("--bottomCam", help="Use Bottom Camera images only", action="store_true")
-    parser.add_argument("--lr", help="Learning rate", type=float, default=1e-1)
-    parser.add_argument("--decay", help="Weight decay", type=float, default=5e-5)
+    parser.add_argument("--lr", help="Learning rate", type=float, default=1e-3)
+    parser.add_argument("--decay", help="Weight decay", type=float, default=1e-5)
     parser.add_argument("--transfer", help="Layers to truly train", action="store_true")
     opt = parser.parse_args()
 
     finetune = opt.finetune
-    learning_rate = opt.lr#*2 if finetune and not opt.transfer else opt.lr
-    dec = opt.decay if finetune else opt.decay/10
+    learning_rate = opt.lr if opt.transfer else opt.lr
+    dec = opt.decay if finetune and not opt.transfer else opt.decay / 10
     transfers = [1, 2, 3, 4] if opt.transfer else [0]
-    decays = [10*dec, 5*dec, 2*dec, dec] if (finetune and not opt.transfer and not opt.UNet) else [dec]
+    decays = [10*dec, 5*dec, 2*dec, dec] if (finetune and not opt.transfer) else [dec]
     if opt.v2:
-        decays = [d*2 for d in decays]
+        decays = [d*1 for d in decays]
     noScale = opt.noScale
     unet = opt.UNet
     v2 = opt.v2
@@ -269,7 +269,7 @@ if __name__ == '__main__':
     momentum = 0.5
 
     if finetune:
-        learning_rate *= 0.1
+        #learning_rate *= 0.1
         momentum = 0.5
         epochs = 200 if noScale else 200
     outSize = 1.0/(labSize[0] * labSize[1])
@@ -293,16 +293,17 @@ if __name__ == '__main__':
     root = "../../Data/RoboCup" if sys.platform != 'win32' else "D:/Datasets/RoboCup"
 
     trainloader = data.DataLoader(SSYUVDataset(root,img_size=labSize,train=True,finetune=finetune,camera=cameraString),
-                                  batch_size=batchSize, shuffle=True, num_workers=4)
+                                  batch_size=batchSize, shuffle=True, num_workers=8)
 
     valloader = data.DataLoader(SSYUVDataset(root,img_size=labSize,train=False,finetune=finetune,camera=cameraString),
-                                batch_size=batchSize, shuffle=True, num_workers=4)
+                                batch_size=batchSize, shuffle=True, num_workers=8)
 
     numClass = 5 - nb - ng - nr - nl
-    numPlanes = 16 if v2 else 8
+    numPlanes = 8 if v2 else 8
     levels = 3 if unet else (1 if v2 else 2)
     depth = 4 if unet else 4
-    bellySize = 0 if unet else (2 if v2 else 5)
+    bellySize = 0 if unet else (9 if v2 else 5)
+    classSize = 3 if v2 else 1
     bellyPlanes = numPlanes*pow(2,depth-1) if v2 else numPlanes*pow(2,depth)
 
     weights = Tensor([1, 2, 6, 3, 2]) if opt.useDice else Tensor([1, 10, 30, 10, 2])
@@ -333,7 +334,7 @@ if __name__ == '__main__':
                 torch.cuda.manual_seed(12345678)
 
             # Initiate model
-            model = ROBO_UNet(noScale,planes=numPlanes,depth=depth,levels=levels,bellySize=bellySize,bellyPlanes=bellyPlanes,pool=unet,v2=v2)
+            model = ROBO_UNet(noScale,planes=numPlanes,depth=depth,levels=levels,bellySize=bellySize,bellyPlanes=bellyPlanes,pool=unet,v2=v2,classSize=classSize)
             comp = model.get_computations()
             print(comp)
             print(sum(comp))
@@ -346,13 +347,20 @@ if __name__ == '__main__':
 
             bestLoss = 0
 
-            optimizer = torch.optim.SGD([
+            '''optimizer = torch.optim.SGD([
                         {'params': model.downPart[0:transfer].parameters(), 'lr': learning_rate*10},
                         {'params': model.downPart[transfer:].parameters()},
                         {'params': model.PB.parameters()},
                         {'params': model.upPart.parameters()},
                         {'params': model.segmenter.parameters()}
-                    ],lr=learning_rate,momentum=momentum)
+                    ],lr=learning_rate,momentum=momentum)'''
+            optimizer = torch.optim.Adam([
+                        {'params': model.downPart[0:transfer].parameters(), 'lr': learning_rate*10},
+                        {'params': model.downPart[transfer:].parameters()},
+                        {'params': model.PB.parameters()},
+                        {'params': model.upPart.parameters()},
+                        {'params': model.segmenter.parameters()}
+                    ],lr=learning_rate)
             #optimizer = torch.optim.SGD(model.parameters(),lr=learning_rate,momentum=momentum)
             eta_min = learning_rate/25 if opt.transfer else learning_rate/10
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,epochs,eta_min=eta_min)
@@ -364,12 +372,13 @@ if __name__ == '__main__':
                 #else:
                     #bestLoss = train(epoch,epochs,bestLoss)
 
-            if finetune and (transfer == 0) and not unet:
+            if finetune and (transfer == 0):
                 model.load_state_dict(torch.load("checkpoints/bestFinetune%s%s%s%s%s%s%s%s.weights" % (v2Str,scaleStr,unetStr,nbStr,ngStr,nrStr,nlStr,cameraSaveStr)))
                 with torch.no_grad():
                     indices = pruneModelNew(model.parameters())
 
-                optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate/20)
+                #optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate/20)
+                optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate/20)
                 print("Finetuning")
 
                 bestLoss = 0
