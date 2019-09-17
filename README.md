@@ -5,7 +5,7 @@ This set of scripts allows you to train deep convolutional networks for semantic
 
 ## 1.Requirements
 
-This code is written in python 2.7. The following python packages are required:
+This code is written in python 3.6. The following python packages are required:
 
 - Pytorch
 - Torchvision
