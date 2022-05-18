@@ -22,11 +22,11 @@ In order to run the code, you also need our datasets, which you can download her
 
 You can download the datasets used for training and finetuning from our website
 
-- [Train set](http://deeplearning.iit.bme.hu/ROBOSeg/train.zip)
-- [Validation set](http://deeplearning.iit.bme.hu/ROBOSeg/val.zip)
-- [Fintune set](http://deeplearning.iit.bme.hu/ROBOSeg/FinetuneHorizon.zip)
+- [Train set](http://deeplearning.iit.bme.hu/Public/ROBOSeg/train.zip)
+- [Validation set](http://deeplearning.iit.bme.hu/Public/ROBOSeg/val.zip)
+- [Fintune set](http://deeplearning.iit.bme.hu/Public/ROBOSeg/FinetuneHorizon.zip)
 
-If you do not want to train your own models, just use our pretrained models, which you can download from [here](http://deeplearning.iit.bme.hu/ROBOSeg/checkpoints.zip). Extract them into the &quot;checkpoints&quot; folder.
+If you do not want to train your own models, just use our pretrained models, which you can download from [here](http://deeplearning.iit.bme.hu/Public/ROBOSeg/checkpoints.zip). Extract them into the &quot;checkpoints&quot; folder.
 
 ## 3.Training a segmentation network
 
